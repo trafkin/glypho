@@ -4,5 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-clap = "4.5.40"
+clap = { version = "4.5.40", features = ["derive"] }
+eyre = "0.6.12"
+futures-util = "0.3.31"
+handlebars = "6.3.2"
 markdown = { version = "1.0.0", features = ["serde"] }
+notify = { version = "8.1.0", features = ["serde"] }
+notify-debouncer-mini = "0.6.0"
+tokio = { version = "1.46.1", features = ["full"] }
+warp = "0.3.7"

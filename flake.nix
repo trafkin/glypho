@@ -125,12 +125,10 @@
                 coreutils
                 rust-analyzer
                 skopeo
-                protobuf
+                watchexec
                 systemfd
                 bacon
                 openssl
-                skopeo
-                grpcurl
               ];
             }
         );
