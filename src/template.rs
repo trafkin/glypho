@@ -4,15 +4,16 @@ pub static TEMPLATE: &'static str = r#"<!DOCTYPE html>
                         <title>Warp Handlebars template example</title>
 
                         <script type="text/javascript">
+                        console.log("init");
+                        var eventSource = new EventSource('sse');
 
-                          const uri = 'http://localhost:3030/reload';
-                          const sse = new EventSource(uri);
-                            sse.onopen = function() {
-                               console.log("connected");
+                        eventSource.onmessage = function(event) {
+                        
+                            if (event.data !== "false") {
+                                document.body.innerHTML = event.data;
                             }
-                             sse.onmessage = function(msg) {
-                                console.log(msg.data);
-                            };
+                        }
+
 
 
                         </script>

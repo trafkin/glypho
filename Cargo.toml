@@ -10,11 +10,11 @@ handlebars = "6.3.2"
 markdown = { version = "1.0.0", features = ["serde"] }
 tokio = { version = "1.46.1", features = ["full"] }
 tokio-stream = "0.1.17"
-warp = "0.3.7"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt", "registry", "std"] }
 tracing = "0.1.41"
-# async-watcher = "0.3.0"
+async-watcher = "0.3.0"
 futures-util = "0.3.31"
-notify = { version = "8.1.0", features = ["serde"] }
-notify-debouncer-mini = { version = "0.6.0", features = ["serde"] }
+futures-core = "0.3.31"
+axum = "0.8.4"
+futures = "0.3.31"
 
