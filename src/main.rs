@@ -14,6 +14,7 @@ use axum::{
     },
     routing::get,
 };
+use bytes::BytesMut;
 use clap::{Parser, Subcommand};
 use futures::{Stream, stream};
 use handlebars::Handlebars;
@@ -31,8 +32,35 @@ use tracing::*;
 static CHANGED: AtomicBool = AtomicBool::new(false);
 
 struct InnerState {
-    pub file: PathBuf,
-    pub rendered: String,
+    file: PathBuf,
+    rendered: BytesMut,
+}
+
+impl InnerState {
+    fn new(file: PathBuf, rendered: BytesMut) -> Self {
+        InnerState {
+            file: file,
+            rendered: rendered,
+        }
+    }
+
+    fn reload_file(&mut self) -> &mut Self {
+        self.rendered.clear();
+        let html = self.render().unwrap().as_bytes().into();
+        self.rendered = html;
+        self
+    }
+
+    fn render(&mut self) -> eyre::Result<String> {
+        let mut hb = Handlebars::new();
+        // register the template
+        hb.register_template_string("template.html", TEMPLATE)?;
+        let contents = fs::read_to_string(&self.file)?;
+        let mut data = BTreeMap::new();
+        let body = markdown::to_html(&contents.clone());
+        data.insert("body".to_string(), body.clone());
+        Ok(hb.render("template.html", &data)?)
+    }
 }
 
 type AppState = Mutex<InnerState>;
@@ -90,11 +118,6 @@ async fn event_handler(
 
     let dir = local_state.file.parent().map(|s| s.to_owned()).unwrap();
     let filename = local_state.file.file_name().map(|s| s.to_owned());
-    let f = format!(
-        "{}/{}",
-        dir.to_string_lossy().into_owned(),
-        filename.clone().unwrap().into_string().unwrap()
-    );
 
     tokio::spawn(async move {
         let (mut file_events, _debouncer) = debounce_watch(dir).await.unwrap();
@@ -117,8 +140,9 @@ async fn event_handler(
         let changed = CHANGED.load(std::sync::atomic::Ordering::Relaxed);
         CHANGED.store(false, std::sync::atomic::Ordering::Relaxed);
         if changed {
-            let rendered = load_file(f.clone()).unwrap();
-            Event::default().data(rendered.clone())
+            let mut s = state.lock().unwrap();
+            let html = s.reload_file().render().unwrap();
+            Event::default().data(html)
         } else {
             Event::default().data("false")
         }
@@ -133,35 +157,29 @@ async fn event_handler(
     )
 }
 
-fn load_file(file: impl AsRef<Path>) -> eyre::Result<String> {
-    let mut hb = Handlebars::new();
-    // register the template
-    hb.register_template_string("template.html", TEMPLATE)?;
-    let contents = fs::read_to_string(&file)?;
-    let mut data = BTreeMap::new();
-    let body = markdown::to_html(&contents.clone());
-    data.insert("body".to_string(), body.clone());
-
-    Ok(hb.render("template.html", &data)?)
-}
-
 async fn root(State(state): State<Arc<AppState>>) -> Html<String> {
-    Html(state.lock().unwrap().rendered.clone())
+    let html = state.lock().unwrap().render().unwrap();
+    Html(html)
 }
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     tracing_subscriber::fmt::init();
-
     let args = Args::parse();
 
-    // create server-sent event
+    if let Err(_) = std::env::var("RUST_LOG") {
+        unsafe {
+            std::env::set_var("RUST_LOG", "info");
+        }
+    }
 
     match args.commands {
         Cmds::StartServer { file, port } => {
-            let rendered = load_file(&file)?;
-
-            let shared_state = Arc::new(Mutex::new(InnerState { file, rendered }));
+            // Spawn a task to gracefully shutdown server.
+            let shared_state = Arc::new(Mutex::new(InnerState::new(
+                file,
+                BytesMut::with_capacity(4096),
+            )));
 
             let router = Router::new()
                 .route("/", get(root))
@@ -176,7 +194,10 @@ async fn main() -> eyre::Result<()> {
             tracing::debug!("listening on {}", listener.local_addr().unwrap());
             axum::serve(listener, router).await.unwrap();
         }
-        Cmds::Compile { file, output_file } => todo!(),
+        Cmds::Compile {
+            file: _,
+            output_file: _,
+        } => todo!(),
     }
     Ok(())
 }

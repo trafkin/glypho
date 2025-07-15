@@ -17,4 +17,5 @@ futures-util = "0.3.31"
 futures-core = "0.3.31"
 axum = "0.8.4"
 futures = "0.3.31"
+bytes = "1.10.1"
 
