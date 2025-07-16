@@ -310,7 +310,9 @@ pub static TEMPLATE: &'static str = r#"<!DOCTYPE html>
                 content: open-quote;
                 }
                 :where(blockquote p:last-of-type):not(:where([class~="not-prose"],[class~="not-prose"] *))::after {
-                content: close-quote;
+                cowith custom build scripts. Placing a file named build.rs in the root of a package will cause Cargo to compile that script and execute it just before building the package.
+
+ntent: close-quote;
                 }
                 :where(h1):not(:where([class~="not-prose"],[class~="not-prose"] *)) {
                 color: var(--tw-prose-headings);
