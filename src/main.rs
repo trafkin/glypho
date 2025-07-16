@@ -14,10 +14,12 @@ use axum::{
     },
     routing::get,
 };
+
 use bytes::BytesMut;
 use clap::{Parser, Subcommand};
 use futures::{Stream, stream};
 use handlebars::Handlebars;
+use markdown::{Constructs, Options, ParseOptions};
 use std::{
     collections::BTreeMap,
     convert::Infallible,
@@ -27,6 +29,7 @@ use std::{
     time::Duration,
 };
 use tokio_stream::StreamExt as _;
+use tower_http::services::ServeDir;
 use tracing::*;
 
 static CHANGED: AtomicBool = AtomicBool::new(false);
@@ -38,10 +41,7 @@ struct InnerState {
 
 impl InnerState {
     fn new(file: PathBuf, rendered: BytesMut) -> Self {
-        InnerState {
-            file: file,
-            rendered: rendered,
-        }
+        InnerState { file, rendered }
     }
 
     fn reload_file(&mut self) -> &mut Self {
@@ -57,7 +57,19 @@ impl InnerState {
         hb.register_template_string("template.html", TEMPLATE)?;
         let contents = fs::read_to_string(&self.file)?;
         let mut data = BTreeMap::new();
-        let body = markdown::to_html(&contents.clone());
+        let options = Options {
+            parse: ParseOptions {
+                constructs: Constructs {
+                    code_indented: true,
+                    ..Constructs::default()
+                },
+                gfm_strikethrough_single_tilde: true,
+                math_text_single_dollar: true,
+                ..ParseOptions::default()
+            },
+            ..Options::default()
+        };
+        let body = markdown::to_html_with_options(&contents.clone(), &options).unwrap();
         data.insert("body".to_string(), body.clone());
         Ok(hb.render("template.html", &data)?)
     }
@@ -112,7 +124,6 @@ pub async fn debounce_watch<P: AsRef<Path>>(
 async fn event_handler(
     State(state): State<Arc<AppState>>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    dbg!("Im'in");
     let binding = state.clone();
     let local_state = binding.lock().unwrap();
 
@@ -148,11 +159,11 @@ async fn event_handler(
         }
     })
     .map(Ok)
-    .throttle(Duration::from_secs(1));
+    .throttle(Duration::from_millis(100));
 
     Sse::new(stream).keep_alive(
         axum::response::sse::KeepAlive::new()
-            .interval(Duration::from_secs(1))
+            .interval(Duration::from_millis(1000))
             .text("keep-alive-text"),
     )
 }
@@ -166,16 +177,8 @@ async fn root(State(state): State<Arc<AppState>>) -> Html<String> {
 async fn main() -> eyre::Result<()> {
     tracing_subscriber::fmt::init();
     let args = Args::parse();
-
-    if let Err(_) = std::env::var("RUST_LOG") {
-        unsafe {
-            std::env::set_var("RUST_LOG", "info");
-        }
-    }
-
     match args.commands {
         Cmds::StartServer { file, port } => {
-            // Spawn a task to gracefully shutdown server.
             let shared_state = Arc::new(Mutex::new(InnerState::new(
                 file,
                 BytesMut::with_capacity(4096),

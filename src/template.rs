@@ -18,6 +18,7 @@ pub static TEMPLATE: &'static str = r#"<!DOCTYPE html>
 
                         </script>
 
+                        <link href="assets/prism.css" rel="stylesheet" />
                         <style>
                         /* Reset and base styles */
                         * {
@@ -289,5 +290,6 @@ pub static TEMPLATE: &'static str = r#"<!DOCTYPE html>
                       </head>
                       <body>
                             {{{body}}}
+                            <script src="assets/prism.js"></script>
                       </body>
                     </html>"#;
