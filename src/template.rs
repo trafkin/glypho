@@ -1,8 +1,7 @@
 pub static TEMPLATE: &'static str = r#"<!DOCTYPE html>
 <html>
     <head>
-        <title>Warp Handlebars template example</title>
-
+        <title>Glypho</title>
         <script type="text/javascript">
             console.log("init");
             var eventSource = new EventSource('sse');

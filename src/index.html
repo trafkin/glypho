@@ -16,12 +16,33 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="./style.css" rel="stylesheet">
+    <link href="./prism.css" rel="stylesheet">
+    <script src="./prism.js"></script>
 </head>
 
 <body class="bg-white text-black dark:bg-gray-900 dark:text-white">
     <main class="max-w-3xl mx-auto p-6">
         <article class="prose lg:prose-lg dark:prose-invert">
-            {{{ body }}}
+            <pre><code class="lang-rust"><span class="hljs-keyword">pub</span> async <span class="hljs-function"><span class="hljs-keyword">fn</span> <span class="hljs-title">debounce_watch</span></span>&lt;P: <span class="hljs-built_in">AsRef</span>&lt;Path&gt;&gt;(
+    path: P) -&gt; <span class="hljs-built_in">Result</span>&lt;(
+                    tokio::sync::mpsc::Receiver&lt;<span class="hljs-built_in">Result</span>&lt;<span class="hljs-built_in">Vec</span>&lt;DebouncedEvent&gt;, <span class="hljs-built_in">Vec</span>&lt;notify::Error&gt;&gt;&gt;,
+                    AsyncDebouncer&lt;RecommendedWatcher&gt;,
+                ),
+                <span class="hljs-built_in">Box</span>&lt;dyn std::error::Error&gt;,
+            &gt; {
+                <span class="hljs-keyword">let</span> (tx, rx) = tokio::sync::mpsc::channel(<span class="hljs-number">100</span>);
+            
+                <span class="hljs-keyword">let</span> <span class="hljs-keyword">mut</span> debouncer =
+                    AsyncDebouncer::new(Duration::from_secs(<span class="hljs-number">1</span>), <span class="hljs-literal">Some</span>(Duration::from_secs(<span class="hljs-number">1</span>)), tx).await?;
+            
+                <span class="hljs-comment">// add the paths to the watcher</span>
+                debouncer
+                    .watcher()
+                    .watch(path.as_ref(), RecursiveMode::Recursive)?;
+            
+                <span class="hljs-literal">Ok</span>((rx, debouncer))
+}
+            </code></pre>
         </article>
     </main>
 </body>
