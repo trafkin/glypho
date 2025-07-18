@@ -2,3 +2,4 @@
 /.direnv
 /result
 .envrc
+/src/template.html
