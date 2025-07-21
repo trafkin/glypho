@@ -19,7 +19,7 @@ use bytes::BytesMut;
 use clap::{Parser, Subcommand};
 use futures::{Stream, stream};
 use handlebars::Handlebars;
-use markdown::{Constructs, Options, ParseOptions};
+use markdown::{CompileOptions, Constructs, Options, ParseOptions};
 use std::{
     collections::BTreeMap,
     convert::Infallible,
@@ -61,11 +61,20 @@ impl InnerState {
             parse: ParseOptions {
                 constructs: Constructs {
                     code_indented: true,
-                    ..Constructs::default()
+                    math_text: true,
+                    math_flow: true,
+                    gfm_table: true,
+                    gfm_task_list_item: true,
+                    attention: true,
+                    ..Constructs::gfm()
                 },
                 gfm_strikethrough_single_tilde: true,
                 math_text_single_dollar: true,
                 ..ParseOptions::default()
+            },
+            compile: CompileOptions {
+                allow_dangerous_html: true,
+                ..CompileOptions::gfm()
             },
             ..Options::default()
         };

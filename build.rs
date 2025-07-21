@@ -5,7 +5,7 @@ use std::path::Path;
 use handlebars::Handlebars;
 use walkdir::DirEntry;
 
-fn is_css(entry: &DirEntry) -> bool {
+pub fn is_css(entry: &DirEntry) -> bool {
     entry
         .file_name()
         .to_str()
@@ -13,7 +13,7 @@ fn is_css(entry: &DirEntry) -> bool {
         .unwrap_or(false)
 }
 
-fn is_js(entry: &DirEntry) -> bool {
+pub fn is_js(entry: &DirEntry) -> bool {
     entry
         .file_name()
         .to_str()
@@ -22,7 +22,6 @@ fn is_js(entry: &DirEntry) -> bool {
 }
 
 fn main() -> eyre::Result<()> {
-    // let out_dir = env::var_os("OUT_DIR").unwrap_or(OsString::from("./src"));
     let mut hb = Handlebars::new();
     let css = fs::read_to_string("./src/assets/style.css")?;
     let prism_css = fs::read_to_string("./src/assets/prism.css")?;
