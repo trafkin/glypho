@@ -61,15 +61,13 @@ impl InnerState {
             parse: ParseOptions {
                 constructs: Constructs {
                     code_indented: true,
-                    math_text: true,
-                    math_flow: true,
                     gfm_table: true,
                     gfm_task_list_item: true,
                     attention: true,
+                    frontmatter: true,
                     ..Constructs::gfm()
                 },
                 gfm_strikethrough_single_tilde: true,
-                math_text_single_dollar: true,
                 ..ParseOptions::default()
             },
             compile: CompileOptions {

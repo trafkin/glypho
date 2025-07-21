@@ -1,3 +1,8 @@
+---
+title: This is a test
+author: Christopher el Gran Valerio
+
+---
 # Dillinger
 ## _The Last Markdown Editor, Ever_
 
@@ -12,8 +17,43 @@ AngularJS-powered HTML5 Markdown editor.
 - See HTML in the right
 - ✨Magic ✨
 
-- [ ]  test 1
-- [ ] test 2
+- [ ] test 1
+- [x] test 2 @done(07/21/25 13:07)
+
+This sentence uses  delimiters to show math inline: $\sqrt{3x-1}+(1+x)^2$
+
+$$
+\begin{aligned}
+ p & = \hbar k \\ 
+ E & = \hbar \omega \\ 
+\end{aligned}
+$$
+
+```rust
+
+fn main() -> eyre::Result<()> {
+    let mut hb = Handlebars::new();
+    let css = fs::read_to_string("./src/assets/style.css")?;
+    let prism_css = fs::read_to_string("./src/assets/prism.css")?;
+    let js = fs::read_to_string("./src/assets/prism.js")?;
+    let index = fs::read_to_string("./src/assets/index.html")?;
+    hb.register_template_string("index.html", index.clone())?;
+    let all_css = [css, prism_css].join("\n");
+    let mut data = BTreeMap::new();
+    data.insert("css".to_string(), all_css.clone());
+    data.insert("js".to_string(), js.clone());
+    let t = hb.render("index.html", &data)?;
+    let dest_path = Path::new("./src/").join("template.html");
+    fs::write(&dest_path, format!("{t}"))?;
+    println!("cargo::rerun-if-changed=build.rs");
+    println!("cargo::rerun-if-changed=./assets/");
+    println!("cargo::rerun-if-changed=./template.html/");
+
+    Ok(())
+}
+
+```
+
 
 ## Features
 

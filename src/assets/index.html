@@ -10,10 +10,21 @@
             if (event.data !== "false") {
                 document.body.innerHTML = event.data;
             }
-        }
+        };
     </script>
+    <script>
+MathJax = {
+  tex: {
+    inlineMath: [['$', '$'], ['\\(', '\\)']]
+  }
+};
+</script>
+
+  <script id="MathJax-script" async
+          src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js">
+  </script>
     <style>
-{{{css}}}
+      {{{css}}}
     </style>
 </head>
 
@@ -25,7 +36,7 @@
     </main>
 
     <script type="text/javascript">
-{{{js}}}
+      {{{js}}}
     </script>
 </body>
 
