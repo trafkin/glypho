@@ -28,6 +28,7 @@ use std::{
     sync::{Arc, Mutex, atomic::AtomicBool},
     time::Duration,
 };
+use tower_http::services::ServeDir;
 
 use tokio_stream::StreamExt as _;
 use tracing::*;
@@ -120,7 +121,7 @@ pub async fn debounce_watch<P: AsRef<Path>>(
     let mut debouncer =
         AsyncDebouncer::new(Duration::from_secs(1), Some(Duration::from_secs(1)), tx).await?;
 
-    // add the paths to the watcher
+    // Add the paths to the watcher
     debouncer
         .watcher()
         .watch(path.as_ref(), RecursiveMode::Recursive)?;
@@ -187,12 +188,14 @@ async fn main() -> eyre::Result<()> {
     match args.commands {
         Cmds::StartServer { file, port } => {
             let shared_state = Arc::new(Mutex::new(InnerState::new(
-                file,
+                file.clone(),
                 BytesMut::with_capacity(4096),
             )));
 
+            let serve_dir = ServeDir::new(file.parent().unwrap());
             let router = Router::new()
                 .route("/", get(root))
+                .fallback_service(serve_dir)
                 .route("/sse", get(event_handler))
                 .with_state(shared_state);
 
