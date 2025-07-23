@@ -1,4 +1,4 @@
-use crate::template::TEMPLATE;
+use crate::{error::GlyphoError, template::TEMPLATE};
 use async_watcher::{
     AsyncDebouncer, DebouncedEvent,
     notify::{self, RecommendedWatcher, RecursiveMode},
@@ -15,7 +15,12 @@ use futures::{Stream, stream};
 use handlebars::Handlebars;
 use markdown::{CompileOptions, Constructs, Options, ParseOptions};
 use std::{
-    collections::BTreeMap, convert::Infallible, fs, path::{Path, PathBuf}, sync::{atomic::AtomicBool, Arc, Mutex}, time::Duration
+    collections::BTreeMap,
+    convert::Infallible,
+    fs,
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex, atomic::AtomicBool},
+    time::Duration,
 };
 use tokio_stream::StreamExt as _;
 use tracing::*;
@@ -65,7 +70,7 @@ pub async fn event_handler(
                         }
                     }
                 }
-                Err(_) => todo!(),
+                Err(_) => panic!(),
             }
         }
     });
@@ -96,7 +101,6 @@ pub async fn root(State(state): State<Arc<AppState>>) -> Html<String> {
     Html(html)
 }
 
-
 pub struct InnerState {
     file: PathBuf,
     rendered: BytesMut,
@@ -118,8 +122,11 @@ impl InnerState {
         let mut hb = Handlebars::new();
         // register the template
         hb.register_template_string("template.html", TEMPLATE)?;
-        let contents = fs::read_to_string(&self.file)?;
-        let mut data = BTreeMap::new();
+
+        let contents = match fs::read_to_string(&self.file) {
+            Ok(c) => c,
+            Err(err) => String::from(format!("**Cannot Load the markdown file: {err:?}**")),
+        };
         let options = Options {
             parse: ParseOptions {
                 constructs: Constructs {
@@ -139,7 +146,18 @@ impl InnerState {
             },
             ..Options::default()
         };
-        let body = markdown::to_html_with_options(&contents.clone(), &options).unwrap();
+
+        let mut data = BTreeMap::new();
+        let body =
+            markdown::to_html_with_options(&contents.clone(), &options).map_err(|message| {
+                GlyphoError::MarkdownError {
+                    place: message.place,
+                    reason: message.reason,
+                    rule_id: *message.rule_id,
+                    m_source: *message.source,
+                }
+            })?;
+
         data.insert("body".to_string(), body.clone());
         Ok(hb.render("template.html", &data)?)
     }

@@ -1,21 +1,24 @@
-mod template;
-mod state;
 mod cli;
+mod error;
+mod state;
+mod template;
 
-use axum::{
-    Router,
-    routing::get,
-};
+use axum::{Router, routing::get};
 
 use bytes::BytesMut;
 use clap::Parser;
-use tracing::info;
-use std::{env, 
-    sync::{Arc, Mutex}};
+use std::{
+    env,
+    sync::{Arc, Mutex},
+};
 use tower_http::services::ServeDir;
-use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+use tracing::info;
+use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
-use crate::{cli::{Args, Cmds}, state::{event_handler, root, InnerState}};
+use crate::{
+    cli::{Args, Cmds},
+    state::{InnerState, event_handler, root},
+};
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
@@ -38,16 +41,21 @@ async fn main() -> eyre::Result<()> {
 
             let port = port.unwrap_or(3030);
 
-            let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}"))
-                .await
-                .unwrap();
+            let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await?;
 
-            let file_name = file.file_name().and_then(|fname| fname.to_str()).unwrap_or("unknown");
-            tracing::info!("Serving {} at http://{}", file_name, listener.local_addr().unwrap());
+            let file_name = file
+                .file_name()
+                .and_then(|fname| fname.to_str())
+                .unwrap_or("unknown");
+            tracing::info!(
+                "Serving {} at http://{}",
+                file_name,
+                listener.local_addr().unwrap()
+            );
             info!("Press Ctrl+C to stop the server");
             println!("");
 
-            axum::serve(listener, router).await.unwrap();
+            axum::serve(listener, router).await?;
         }
         Cmds::Compile {
             file: _,
@@ -58,7 +66,7 @@ async fn main() -> eyre::Result<()> {
 }
 
 fn logger() {
-    // if you want to see debug logs define the env var as GLYPHO=debug
+    // If you want to see debug logs define the env var as GLYPHO=debug
     let log_level = env::var("GLYPHO").unwrap_or_else(|_| "info".into());
 
     let is_debug = log_level == "debug";
@@ -66,12 +74,12 @@ fn logger() {
     // Logger
     tracing_subscriber::registry()
         .with(
-        fmt::layer()
-            .without_time()
-            .with_file(is_debug)
-            .with_line_number(is_debug)
-            .with_target(is_debug)
-            .with_level(is_debug)
+            fmt::layer()
+                .without_time()
+                .with_file(is_debug)
+                .with_line_number(is_debug)
+                .with_target(is_debug)
+                .with_level(is_debug),
         )
         .with(
             EnvFilter::try_new(format!("glypho={}", log_level))

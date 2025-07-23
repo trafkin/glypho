@@ -20,6 +20,7 @@ futures = "0.3.31"
 bytes = "1.10.1"
 tower = "0.5.2"
 tower-http = { version = "0.6.6", features = ["fs"] }
+thiserror = "2.0.12"
 
 [build-dependencies]
 walkdir = "2.5.0"
