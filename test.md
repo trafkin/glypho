@@ -157,6 +157,7 @@ function baz(s) {
 
 Open your favorite Terminal and run these commands.
 
+
 First Tab:
 
 ```sh
