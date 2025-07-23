@@ -10,17 +10,13 @@ use axum::{
         sse::{Event, Sse},
     },
 };
-
 use bytes::BytesMut;
-use clap::{Parser, Subcommand};
 use futures::{Stream, stream};
 use handlebars::Handlebars;
 use markdown::{CompileOptions, Constructs, Options, ParseOptions};
-use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 use std::{
-    collections::BTreeMap, convert::Infallible, env, fs, path::{Path, PathBuf}, sync::{atomic::AtomicBool, Arc, Mutex}, time::Duration
+    collections::BTreeMap, convert::Infallible, fs, path::{Path, PathBuf}, sync::{atomic::AtomicBool, Arc, Mutex}, time::Duration
 };
-
 use tokio_stream::StreamExt as _;
 use tracing::*;
 
@@ -106,31 +102,6 @@ pub struct InnerState {
     rendered: BytesMut,
 }
 
-pub fn logger() {
-    // if you want to see debug logs define the env var as GLYPHO=debug
-    let log_level = env::var("GLYPHO").unwrap_or_else(|_| "info".into());
-
-    let is_debug = log_level == "debug";
-
-    // Logger
-    tracing_subscriber::registry()
-        .with(
-        fmt::layer()
-            .without_time()
-            .with_file(is_debug)
-            .with_line_number(is_debug)
-            .with_target(is_debug)
-            .with_level(is_debug)
-        )
-        .with(
-            EnvFilter::try_new(format!("glypho={}", log_level))
-                .expect("error in EnvFilter (Logger)"),
-        )
-        .init();
-
-    println!("");
-}
-
 impl InnerState {
     pub fn new(file: PathBuf, rendered: BytesMut) -> Self {
         InnerState { file, rendered }
@@ -175,25 +146,3 @@ impl InnerState {
 }
 
 type AppState = Mutex<InnerState>;
-
-#[derive(Parser, Debug)]
-pub struct Args {
-    #[command(subcommand)]
-    pub commands: Cmds,
-}
-
-#[derive(Subcommand, Debug)]
-pub enum Cmds {
-    StartServer {
-        #[arg(short, long)]
-        file: PathBuf,
-        #[arg(short, long)]
-        port: Option<u16>,
-    },
-
-    Compile {
-        #[arg(short, long)]
-        file: PathBuf,
-        output_file: PathBuf,
-    },
-}

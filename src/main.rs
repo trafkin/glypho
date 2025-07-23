@@ -1,5 +1,6 @@
 mod template;
-mod wrapper;
+mod state;
+mod cli;
 
 use axum::{
     Router,
@@ -9,11 +10,12 @@ use axum::{
 use bytes::BytesMut;
 use clap::Parser;
 use tracing::info;
-use std::
-    sync::{Arc, Mutex};
+use std::{env, 
+    sync::{Arc, Mutex}};
 use tower_http::services::ServeDir;
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-use crate::wrapper::{event_handler, logger, root, Args, Cmds, InnerState};
+use crate::{cli::{Args, Cmds}, state::{event_handler, root, InnerState}};
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
@@ -53,4 +55,29 @@ async fn main() -> eyre::Result<()> {
         } => todo!(),
     }
     Ok(())
+}
+
+fn logger() {
+    // if you want to see debug logs define the env var as GLYPHO=debug
+    let log_level = env::var("GLYPHO").unwrap_or_else(|_| "info".into());
+
+    let is_debug = log_level == "debug";
+
+    // Logger
+    tracing_subscriber::registry()
+        .with(
+        fmt::layer()
+            .without_time()
+            .with_file(is_debug)
+            .with_line_number(is_debug)
+            .with_target(is_debug)
+            .with_level(is_debug)
+        )
+        .with(
+            EnvFilter::try_new(format!("glypho={}", log_level))
+                .expect("error in EnvFilter (Logger)"),
+        )
+        .init();
+
+    println!("");
 }
