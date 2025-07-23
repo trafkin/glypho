@@ -15,4 +15,9 @@ Glypho was created to make reading Markdown as frictionless as possible — espe
 
 ## Installation
 
+### Using Cargo
+
+1. Pull the repository and go to the root directory
+2. Run `cargo install --path .`
+
 ## Usage
