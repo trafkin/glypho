@@ -1,26 +1,10 @@
-use std::path::PathBuf;
-
-use clap::{Parser, Subcommand};
+use clap::Parser;
+use clap_stdin::FileOrStdin;
 
 #[derive(Parser, Debug)]
 pub struct Args {
-    #[command(subcommand)]
-    pub commands: Cmds,
+    #[arg(default_value = "-")]
+    pub input: FileOrStdin,
+    #[arg(short, long, default_value = "3030")]
+    pub port: u16,
 }
-
-#[derive(Subcommand, Debug)]
-pub enum Cmds {
-    StartServer {
-        #[arg(short, long)]
-        file: PathBuf,
-        #[arg(short, long)]
-        port: Option<u16>,
-    },
-
-    Compile {
-        #[arg(short, long)]
-        file: PathBuf,
-        output_file: PathBuf,
-    },
-}
-

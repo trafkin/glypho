@@ -125,7 +125,10 @@ impl InnerState {
 
         let contents = match fs::read_to_string(&self.file) {
             Ok(c) => c,
-            Err(err) => String::from(format!("**Cannot Load the markdown file: {err:?}**")),
+            Err(err) => {
+                dbg!(&err);
+                String::from(format!("**Cannot Load the markdown file: {err:?}**"))
+            }
         };
         let options = Options {
             parse: ParseOptions {
