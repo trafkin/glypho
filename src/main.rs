@@ -55,7 +55,10 @@ async fn main() -> eyre::Result<()> {
     info!("Press Ctrl+C to stop the server");
     println!("");
 
-    open::that_detached(format!("http://localhost:{port}"))?;
+    if !args.no_browser {
+        open::that_detached(format!("http://localhost:{port}"))?;
+    }
+
     axum::serve(listener, router).await?;
 
     Ok(())
