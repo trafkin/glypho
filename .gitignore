@@ -4,3 +4,4 @@
 .envrc
 /src/template.html
 /.flatpak-builder
+/repo
