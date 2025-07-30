@@ -8,7 +8,10 @@
         var eventSource = new EventSource('sse');
         eventSource.onmessage = function (event) {
             if (event.data !== "false") {
-                document.body.innerHTML = event.data;
+              const el = document.querySelector("article#markdown");
+                el.innerHTML = event.data;
+            	  Prism.highlightAllUnder(el);
+                MathJax.typeset();
             }
         };
     </script>
@@ -30,7 +33,7 @@ MathJax = {
 
 <body class="bg-white text-black dark:bg-gray-900 dark:text-white">
     <main class="max-w-3xl mx-auto p-6">
-        <article class="prose lg:prose-lg dark:prose-invert">
+        <article id="markdown" class="prose lg:prose-lg dark:prose-invert">
             \{{{ body }}}
         </article>
     </main>
