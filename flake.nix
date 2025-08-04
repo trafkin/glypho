@@ -120,6 +120,8 @@
 
               packages = with pkgs; [
                 clang
+                nodejs
+                nodePackages.pnpm
                 mold
                 upx
                 coreutils

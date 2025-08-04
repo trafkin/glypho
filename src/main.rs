@@ -18,7 +18,7 @@ use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 use crate::{
     cli::Args,
-    state::{InnerState, event_handler, root},
+    state::{InnerState, event_handler, init, root},
 };
 
 #[tokio::main]
@@ -37,6 +37,7 @@ async fn main() -> eyre::Result<()> {
     let serve_dir = ServeDir::new(file.parent().unwrap());
     let router = Router::new()
         .route("/", get(root))
+        .route("/init", get(init))
         .fallback_service(serve_dir)
         .route("/sse", get(event_handler))
         .with_state(shared_state);

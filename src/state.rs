@@ -96,7 +96,12 @@ pub async fn event_handler(
     )
 }
 
-pub async fn root(State(state): State<Arc<AppState>>) -> Html<String> {
+pub async fn root(State(_): State<Arc<AppState>>) -> Html<String> {
+    let html = TEMPLATE.to_string();
+    Html(html)
+}
+
+pub async fn init(State(state): State<Arc<AppState>>) -> Html<String> {
     let html = state.lock().unwrap().render().unwrap();
     Html(html)
 }
@@ -119,10 +124,6 @@ impl InnerState {
     }
 
     fn render(&mut self) -> eyre::Result<String> {
-        let mut hb = Handlebars::new();
-        // register the template
-        hb.register_template_string("template.html", TEMPLATE)?;
-
         let contents = match fs::read_to_string(&self.file) {
             Ok(c) => c,
             Err(err) => {
@@ -150,7 +151,6 @@ impl InnerState {
             ..Options::default()
         };
 
-        let mut data = BTreeMap::new();
         let body =
             markdown::to_html_with_options(&contents.clone(), &options).map_err(|message| {
                 GlyphoError::MarkdownError {
@@ -161,8 +161,7 @@ impl InnerState {
                 }
             })?;
 
-        data.insert("body".to_string(), body.clone());
-        Ok(hb.render("template.html", &data)?)
+        Ok(body)
     }
 }
 
