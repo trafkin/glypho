@@ -1,13 +1,4 @@
 
-import "./tex-mml-chtml.js";
-
-MathJax = {
-  tex: {
-    inlineMath: [['$', '$'], ['\\(', '\\)']]
-  }
-};
-
-
 fetch('init').then(response => {
   response.text().then(data => {
       const el = document.querySelector("article#markdown");
@@ -19,7 +10,6 @@ fetch('init').then(response => {
 
 });
 
-console.log("init");
 var eventSource = new EventSource('sse');
 eventSource.onmessage = function (event) {
     if (event.data !== "false") {
