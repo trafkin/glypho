@@ -38,16 +38,34 @@
         pkgs = import nixpkgs {inherit system overlays;};
         rustVersion = rustToolchain;
 
-        src = pkgs.lib.cleanSourceWith {
-          src = ./.; # The original, unfiltered source
-          name = "source";
-        };
+        src = let
+          fs = pkgs.lib.fileset;
+          unfilteredRoot = ./.; # The original, unfiltered source
+          files = pkgs.lib.fileset.unions [
+            (craneLib.fileset.commonCargoSources unfilteredRoot)
+            (pkgs.lib.fileset.fileFilter (file: file.hasExt "html") unfilteredRoot)
+            ./glypho-web
+          ];
+
+          source = pkgs.lib.fileset.toSource {
+            root = unfilteredRoot;
+            fileset = files;
+          };
+        in
+          pkgs.lib.cleanSourceWith {
+            src = source;
+            name = "source";
+          };
 
         commonArgs = {
           inherit src;
           CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
           CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static -C linker=clang -C link-arg=-fuse-ld=${pkgs.mold}/bin/mold";
-          buildInputs = with pkgs; [openssl];
+          buildInputs = with pkgs; [
+            openssl
+            nodejs
+            nodePackages.pnpm
+          ];
           nativeBuildInputs = with pkgs; [
             clang
             mold

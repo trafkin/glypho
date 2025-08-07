@@ -20,7 +20,7 @@ AngularJS-powered HTML5 Markdown editor.
 - [ ] test 1
 - [x] test 2 @done(07/21/25 13:07)
 
-This sentence uses  delimiters to show math inline: $\sqrt{3x-1}+(1+x)^2$
+This sentence uses delimiters to show math inline: $\sqrt{3x-1}+(1+x)^2$
 
 $$
 \begin{aligned}

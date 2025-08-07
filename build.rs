@@ -1,6 +1,7 @@
 use std::process::Command;
 
 fn main() -> eyre::Result<()> {
+    Command::new("ls").current_dir("./").spawn()?;
     Command::new("npm")
         .current_dir("./glypho-web/")
         .args(["run", "build"])
