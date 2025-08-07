@@ -12,8 +12,8 @@ fn main() -> eyre::Result<()> {
         .spawn()?;
 
     println!("cargo::rerun-if-changed=build.rs");
-    println!("cargo::rerun-if-changed=./glypho-web/src");
-    println!("cargo::rerun-if-changed=./template.html/");
+    println!("cargo::rerun-if-changed=./glypho-web/src/");
+    println!("cargo::rerun-if-changed=./glypho-web/dist/index.html");
 
     Ok(())
 }
