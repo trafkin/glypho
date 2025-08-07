@@ -1,7 +1,6 @@
 use std::process::Command;
 
 fn main() -> eyre::Result<()> {
-    // let dest_path = Path::new("./src/").join("template.html");
     Command::new("npm")
         .current_dir("./glypho-web/")
         .args(["run", "build"])

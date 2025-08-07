@@ -12,10 +12,8 @@ use axum::{
 };
 use bytes::BytesMut;
 use futures::{Stream, stream};
-use handlebars::Handlebars;
 use markdown::{CompileOptions, Constructs, Options, ParseOptions};
 use std::{
-    collections::BTreeMap,
     convert::Infallible,
     fs,
     path::{Path, PathBuf},
