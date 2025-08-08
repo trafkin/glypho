@@ -24,7 +24,22 @@ thiserror = "2.0.12"
 clap-stdin = "0.6.0"
 open = "5.3.2"
 
+[target.'cfg(target_env = "musl")'.dependencies]
+mimalloc = { version = "*", features = ["secure"] }
+
+
 [build-dependencies]
 walkdir = "2.5.0"
 eyre = "0.6.12"
 handlebars = "6.3.2"
+
+[profile.release]
+opt-level = "z"
+debug = "none"
+strip = "symbols"
+debug-assertions = false
+overflow-checks = false
+lto = "fat"
+panic = "abort"
+incremental = false
+codegen-units = 1

@@ -21,6 +21,13 @@ use crate::{
     state::{InnerState, event_handler, init, root},
 };
 
+#[cfg(target_env = "musl")]
+use mimalloc::MiMalloc;
+
+#[cfg(target_env = "musl")]
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
+
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     logger();

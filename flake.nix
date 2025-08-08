@@ -81,7 +81,6 @@
           // {
             inherit cargoArtifacts;
             pname = "glypho";
-
             postInstall = ''
               ${pkgs.upx}/bin/upx $out/bin/${glypho.pname}
             '';
@@ -138,6 +137,7 @@
 
               packages = with pkgs; [
                 clang
+                git-cliff
                 nodejs
                 nodePackages.pnpm
                 mold
