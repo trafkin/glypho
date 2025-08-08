@@ -77,8 +77,15 @@ pub async fn event_handler(
         let changed = CHANGED.load(std::sync::atomic::Ordering::Relaxed);
         CHANGED.store(false, std::sync::atomic::Ordering::Relaxed);
         if changed {
-            let mut s = state.lock().unwrap();
-            let html = s.reload_file().render().unwrap();
+            let s: Result<_, GlyphoError> = state.lock().map_err(|err| err.into());
+            let effect: Result<_, GlyphoError> =
+                s.and_then(|mut state| state.reload_file().render().map_err(|e| e.into()));
+
+            let html: String = match effect {
+                Ok(v) => v,
+                Err(err) => format!("Something weird happened:{}", err.to_string()),
+            };
+
             Event::default().data(html)
         } else {
             Event::default().data("false")
