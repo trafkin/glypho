@@ -7,11 +7,8 @@ use axum::{Router, routing::get};
 
 use bytes::BytesMut;
 use clap::Parser;
-use std::{
-    env,
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, RwLock};
+use std::{env, path::PathBuf};
 use tower_http::services::ServeDir;
 use tracing::info;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
@@ -36,7 +33,7 @@ async fn main() -> eyre::Result<()> {
 
     let port = args.port;
     let file = PathBuf::from(args.input.filename());
-    let shared_state = Arc::new(Mutex::new(InnerState::new(
+    let shared_state = Arc::new(RwLock::new(InnerState::new(
         file.clone(),
         BytesMut::with_capacity(4096),
     )));

@@ -17,7 +17,7 @@ use std::{
     convert::Infallible,
     fs,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, atomic::AtomicBool},
+    sync::{Arc, RwLock, atomic::AtomicBool},
     time::Duration,
 };
 use tokio_stream::StreamExt as _;
@@ -51,7 +51,7 @@ pub async fn event_handler(
     State(state): State<Arc<AppState>>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let binding = state.clone();
-    let local_state = binding.lock().unwrap();
+    let local_state = binding.read().unwrap();
 
     let dir = local_state.file.parent().map(|s| s.to_owned()).unwrap();
     let filename = local_state.file.file_name().map(|s| s.to_owned());
@@ -77,7 +77,7 @@ pub async fn event_handler(
         let changed = CHANGED.load(std::sync::atomic::Ordering::Relaxed);
         CHANGED.store(false, std::sync::atomic::Ordering::Relaxed);
         if changed {
-            let s: Result<_, GlyphoError> = state.lock().map_err(|err| err.into());
+            let s: Result<_, GlyphoError> = state.write().map_err(|err| err.into());
             let effect: Result<_, GlyphoError> =
                 s.and_then(|mut state| state.reload_file().render().map_err(|e| e.into()));
 
@@ -107,7 +107,7 @@ pub async fn root(State(_): State<Arc<AppState>>) -> Html<String> {
 }
 
 pub async fn init(State(state): State<Arc<AppState>>) -> Html<String> {
-    let html = state.lock().unwrap().render().unwrap();
+    let html = state.write().unwrap().render().unwrap();
     Html(html)
 }
 
@@ -170,4 +170,4 @@ impl InnerState {
     }
 }
 
-type AppState = Mutex<InnerState>;
+type AppState = RwLock<InnerState>;
