@@ -21,3 +21,5 @@ Glypho was created to make reading Markdown as frictionless as possible — espe
 2. Run `cargo install --path .`
 
 ## Usage
+
+![Demo Animation](./assets/glypho.gif)
