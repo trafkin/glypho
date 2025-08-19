@@ -7,8 +7,6 @@
 - View your Markdown files in a beautiful format
 - Fast startup and live preview through a local web server
 
-![Demo Animation](./assets/glypho.gif)
-
 ## Why Glypho?
 
 Glypho was created to make reading Markdown as frictionless as possible — especially when you just want to **open a file and read**. No need to open a full editor or configure plugins. Just run the command and go.
@@ -23,3 +21,5 @@ Glypho was created to make reading Markdown as frictionless as possible — espe
 2. Run `cargo install --path .`
 
 ## Usage
+
+![Demo Animation](./assets/glypho.gif)
