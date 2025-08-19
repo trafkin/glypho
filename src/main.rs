@@ -13,6 +13,7 @@ use tower_http::services::ServeDir;
 use tracing::info;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
+use crate::error::GlyphoError;
 use crate::{
     cli::Args,
     state::{InnerState, event_handler, init, root},
@@ -27,12 +28,25 @@ static GLOBAL: MiMalloc = MiMalloc;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
+    color_eyre::install()?;
     logger();
     info!("Starting Glypho...");
     let args = Args::parse();
 
     let port = args.port;
-    let file = PathBuf::from(args.input.filename());
+    // let file= PathBuf::from(args.input.filename());
+    let file = match args.input {
+        Some(f) => {
+            if f.is_file() {
+                PathBuf::from(f.filename())
+            } else {
+                return Err(GlyphoError::NotProvided.into());
+            }
+        }
+
+        None => return Err(GlyphoError::NotProvided.into()),
+    };
+
     let shared_state = Arc::new(RwLock::new(InnerState::new(
         file.clone(),
         BytesMut::with_capacity(4096),

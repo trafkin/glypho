@@ -5,6 +5,8 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum GlyphoError {
+    #[error("File not provided")]
+    NotProvided,
     #[error("File not found")]
     NotFound,
     #[error("Makrdown parsing{place:?}, {reason:?}, {rule_id:?}, {m_source:?}")]
