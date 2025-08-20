@@ -87,11 +87,44 @@
           }
         );
 
+        deb-package = pkgs.stdenv.mkDerivation {
+          name = "my-rust-app-deb";
+          src = ./.;
+          
+          nativeBuildInputs = [ pkgs.dpkg ];
+          buildInputs = [ glypho ];
+          
+          buildPhase = ''
+            mkdir -p package/usr/bin
+            mkdir -p package/DEBIAN
+            
+            cp ${glypho}/bin/glypho package/usr/bin/
+            
+            # Create control file
+            cat > package/DEBIAN/control <<EOF
+            Package: glypho
+            Version: 0.1.0
+            Section: utils
+            Priority: optional
+            Architecture: amd64
+            Maintainer: Your Name <your.email@example.com>
+            Description: My Rust Application
+             A simple Rust application packaged as .deb
+            EOF
+          '';
+          
+          installPhase = ''
+            mkdir -p $out
+            dpkg-deb --build package $out/glypho_0.1.0_amd64.deb
+          '';
+        };
+
         runCargoTests = craneLib.cargoTest (commonArgs // {inherit src cargoArtifacts;});
       in {
         packages = {
           inherit glypho runCargoTests;
           default = glypho;
+          build_deb = deb-package;
         };
 
         checks = {
