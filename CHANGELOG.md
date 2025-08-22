@@ -1,9 +1,17 @@
-# Changelog
+## What's Changed in 0.1.0
 
-All notable changes to this project will be documented in this file.
-
-## What's Changed
-* Signed-off-by: Christopher Valerio <christopher@valerio.guru>
+* fix: better io errors
+* merge: nix deb builder
+* feat: NIX deb builder
+* fix: fixing mathajx issue
+* Merge pull request #15 from trafkin/feat-gif
+* gif updated
+* feat: GIF added to README.md
+* feat: GIF added to README.md
+* feat: better error management when a file is not provided
+* refactor: change mutex to rwlock, to avoid locking when reading
+* chore: update flake
+* chore: mimalloc and git cliff
 * chore: better error managment on the stream
 * feat: adding better src
 * fix: rebuilding based on dist/index.html

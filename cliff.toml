@@ -5,7 +5,10 @@
 # owner = "orhun"
 # repo = "git-cliff"
 # token = ""
-
+[bump]
+features_always_bump_minor = true
+breaking_always_bump_major = true
+initial_tag = "0.1.0"
 [changelog]
 # A Tera template to be rendered for each release in the changelog.
 # See https://keats.github.io/tera/docs/#introduction
