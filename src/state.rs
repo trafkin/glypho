@@ -11,6 +11,7 @@ use axum::{
     },
 };
 use bytes::BytesMut;
+use eyre::bail;
 use futures::{Stream, stream};
 use markdown::{CompileOptions, Constructs, Options, ParseOptions};
 use std::{
@@ -117,8 +118,10 @@ pub struct InnerState {
 }
 
 impl InnerState {
-    pub fn new(file: PathBuf, rendered: BytesMut) -> Self {
-        InnerState { file, rendered }
+    pub fn new(file: PathBuf, rendered: BytesMut) -> eyre::Result<Self> {
+        let mut s = InnerState { file, rendered };
+        s.render()?;
+        Ok(s)
     }
 
     fn reload_file(&mut self) -> &mut Self {
@@ -129,13 +132,70 @@ impl InnerState {
     }
 
     fn render(&mut self) -> eyre::Result<String> {
-        let contents = match fs::read_to_string(&self.file) {
+        let content = match fs::read_to_string(&self.file) {
             Ok(c) => c,
-            Err(err) => {
-                dbg!(&err);
-                String::from(format!("**Cannot Load the markdown file: {err:?}**"))
-            }
+            Err(err) => match err.kind() {
+                std::io::ErrorKind::NotFound => bail!("The file or directory does not exist"),
+                std::io::ErrorKind::PermissionDenied => {
+                    bail!("Permission denied, insufficient permissions")
+                }
+                std::io::ErrorKind::ConnectionRefused => bail!("Connection refused by server"),
+                std::io::ErrorKind::ConnectionReset => bail!("Connection was reset by peer"),
+                std::io::ErrorKind::HostUnreachable => bail!("Host is unreachable"),
+                std::io::ErrorKind::NetworkUnreachable => bail!("Network is unreachable"),
+                std::io::ErrorKind::ConnectionAborted => {
+                    bail!("Connection aborted, server closed the connection")
+                }
+                std::io::ErrorKind::NotConnected => bail!("Not connected to any server"),
+                std::io::ErrorKind::AddrInUse => {
+                    bail!("Address is already in use by another application")
+                }
+                std::io::ErrorKind::AddrNotAvailable => {
+                    bail!("Address is not available or invalid")
+                }
+                std::io::ErrorKind::NetworkDown => bail!("Network interface is down"),
+                std::io::ErrorKind::BrokenPipe => {
+                    bail!("Broken pipe, connection closed unexpectedly")
+                }
+                std::io::ErrorKind::AlreadyExists => bail!("File or directory already exists"),
+                std::io::ErrorKind::WouldBlock => bail!("Operation would block; try again later"),
+                std::io::ErrorKind::NotADirectory => {
+                    bail!("A file operation was attempted on a directory")
+                }
+                std::io::ErrorKind::IsADirectory => {
+                    bail!("Directory operation was attempted on a file")
+                }
+                std::io::ErrorKind::DirectoryNotEmpty => bail!("Directory is not empty"),
+                std::io::ErrorKind::ReadOnlyFilesystem => bail!("Read-only filesystem"),
+                std::io::ErrorKind::StaleNetworkFileHandle => {
+                    bail!("Stale network file handle, refresh or invalidate")
+                }
+                std::io::ErrorKind::InvalidInput => bail!("Invalid input provided"),
+                std::io::ErrorKind::InvalidData => bail!("Corrupted data encountered"),
+                std::io::ErrorKind::TimedOut => bail!("Operation timed out"),
+                std::io::ErrorKind::WriteZero => bail!("No bytes were written"),
+                std::io::ErrorKind::StorageFull => bail!("Storage is full"),
+                std::io::ErrorKind::NotSeekable => bail!("File or stream is not seekable"),
+                std::io::ErrorKind::QuotaExceeded => bail!("User quota exceeded"),
+                std::io::ErrorKind::FileTooLarge => bail!("File exceeds filesystem limits"),
+                std::io::ErrorKind::ResourceBusy => bail!("Resource is busy, try again later"),
+                std::io::ErrorKind::ExecutableFileBusy => bail!("Executable file is busy"),
+                std::io::ErrorKind::Deadlock => bail!("Deadlock detected"),
+                std::io::ErrorKind::CrossesDevices => bail!("Operation crosses device boundaries"),
+                std::io::ErrorKind::TooManyLinks => bail!("Too many links in path"),
+                std::io::ErrorKind::InvalidFilename => bail!("Invalid filename or directory name"),
+                std::io::ErrorKind::ArgumentListTooLong => bail!("Argument list is too long"),
+                std::io::ErrorKind::Interrupted => bail!("Operation was interrupted"),
+                std::io::ErrorKind::Unsupported => {
+                    bail!("Operation not supported on this platform")
+                }
+                std::io::ErrorKind::UnexpectedEof => bail!("Unexpected end of file"),
+                std::io::ErrorKind::OutOfMemory => bail!("Out of memory"),
+                std::io::ErrorKind::Other => bail!("An unspecified I/O error occurred"),
+                _ => bail!("An unknown error occurred: {:?}", err),
+            },
         };
+
         let options = Options {
             parse: ParseOptions {
                 constructs: Constructs {
@@ -157,7 +217,7 @@ impl InnerState {
         };
 
         let body =
-            markdown::to_html_with_options(&contents.clone(), &options).map_err(|message| {
+            markdown::to_html_with_options(&content.clone(), &options).map_err(|message| {
                 GlyphoError::MarkdownError {
                     place: message.place,
                     reason: message.reason,

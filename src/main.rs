@@ -50,7 +50,7 @@ async fn main() -> eyre::Result<()> {
     let shared_state = Arc::new(RwLock::new(InnerState::new(
         file.clone(),
         BytesMut::with_capacity(4096),
-    )));
+    )?));
 
     let serve_dir = ServeDir::new(file.parent().unwrap());
     let router = Router::new()
