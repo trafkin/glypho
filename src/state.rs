@@ -52,18 +52,29 @@ pub async fn event_handler(
     State(state): State<Arc<AppState>>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let binding = state.clone();
-    let local_state = binding.read().unwrap();
+    let local_state = binding.read().expect("Failed to unlock mutex");
 
-    let dir = local_state.file.parent().map(|s| s.to_owned()).unwrap();
+    let dir = local_state
+        .file
+        .parent()
+        .map(|s| s.to_owned())
+        .expect("Reading file error");
+
     let filename = local_state.file.file_name().map(|s| s.to_owned());
 
     tokio::spawn(async move {
-        let (mut file_events, _debouncer) = debounce_watch(dir).await.unwrap();
+        let (mut file_events, _debouncer) = debounce_watch(dir)
+            .await
+            .expect("Cannot get debouncer channel");
+
         while let Some(events) = file_events.recv().await {
             match events {
                 Ok(evs) => {
                     for ev in evs {
-                        info!("File {:?} changed", ev.path.to_str().unwrap());
+                        info!(
+                            "File {:?} changed",
+                            ev.path.to_str().expect("Path invalid unicode")
+                        );
                         if ev.path.file_name().map(|s| s.to_owned()) == filename {
                             CHANGED.store(true, std::sync::atomic::Ordering::Relaxed);
                         }
@@ -108,7 +119,11 @@ pub async fn root(State(_): State<Arc<AppState>>) -> Html<String> {
 }
 
 pub async fn init(State(state): State<Arc<AppState>>) -> Html<String> {
-    let html = state.write().unwrap().render().unwrap();
+    let html = state
+        .write()
+        .expect("Cannot unlock mutex")
+        .render()
+        .expect("Cannot convert source markdown");
     Html(html)
 }
 
@@ -126,7 +141,11 @@ impl InnerState {
 
     fn reload_file(&mut self) -> &mut Self {
         self.rendered.clear();
-        let html = self.render().unwrap().as_bytes().into();
+        let html = self
+            .render()
+            .expect("Cannot unlock mutex")
+            .as_bytes()
+            .into();
         self.rendered = html;
         self
     }
