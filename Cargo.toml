@@ -21,7 +21,7 @@ bytes = "1.10.1"
 tower = "0.5.2"
 tower-http = { version = "0.6.6", features = ["fs"] }
 thiserror = "2.0.12"
-clap-stdin = "0.6.0"
+clap-stdin = "0.7.0"
 open = "5.3.2"
 color-eyre = "0.6.5"
 
