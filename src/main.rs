@@ -33,7 +33,7 @@ async fn main() -> eyre::Result<()> {
     info!("Starting Glypho...");
     let args = Args::parse();
 
-    let port = args.port;
+    let port = args.port.unwrap_or_else(|| 0);
     // let file= PathBuf::from(args.input.filename());
     let file = match args.input {
         Some(f) => {
@@ -61,6 +61,7 @@ async fn main() -> eyre::Result<()> {
         .with_state(shared_state);
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await?;
+    let local_addr = listener.local_addr()?;
 
     let file_name = file
         .file_name()
@@ -75,7 +76,7 @@ async fn main() -> eyre::Result<()> {
     println!("");
 
     if !args.no_browser {
-        open::that_detached(format!("http://localhost:{port}"))?;
+        open::that_detached(format!("http://{local_addr}"))?;
     }
 
     axum::serve(listener, router).await?;
