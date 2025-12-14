@@ -12,7 +12,10 @@ use axum::{
     },
 };
 use bytes::BytesMut;
-use datastar::{consts::ElementPatchMode, prelude::PatchElements};
+use datastar::{
+    consts::ElementPatchMode,
+    prelude::{ExecuteScript, PatchElements},
+};
 use eyre::bail;
 use futures::Stream;
 use markdown::{CompileOptions, Constructs, Options, ParseOptions};
@@ -97,6 +100,12 @@ pub async fn event_handler(
                                     .selector("article#markdown")
                                     .mode(ElementPatchMode::Inner);
                                 let sse_event = patch.write_as_axum_sse_event();
+                                yielder.yield_item(Ok(sse_event)).await;
+
+                                let script = ExecuteScript::new(
+                                    "Prism.highlightAllUnder(document.querySelector('article#markdown'));MathJax.typeset();",
+                                );
+                                let sse_event = script.write_as_axum_sse_event();
                                 yielder.yield_item(Ok(sse_event)).await;
                             }
                         }
