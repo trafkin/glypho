@@ -7,8 +7,9 @@ use axum::{Router, routing::get};
 
 use bytes::BytesMut;
 use clap::Parser;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::{env, path::PathBuf};
+use tokio::sync::Mutex;
 use tower_http::services::ServeDir;
 use tracing::info;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
@@ -34,7 +35,7 @@ async fn main() -> eyre::Result<()> {
     let args = Args::parse();
 
     let port = args.port.unwrap_or_else(|| 0);
-    // let file= PathBuf::from(args.input.filename());
+
     let file = match args.input {
         Some(f) => {
             if f.is_file() {
@@ -47,7 +48,7 @@ async fn main() -> eyre::Result<()> {
         None => return Err(GlyphoError::NotProvided.into()),
     };
 
-    let shared_state = Arc::new(RwLock::new(InnerState::new(
+    let shared_state = Arc::new(Mutex::new(InnerState::new(
         file.clone(),
         BytesMut::with_capacity(4096),
     )?));

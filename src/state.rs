@@ -3,6 +3,7 @@ use async_watcher::{
     AsyncDebouncer, DebouncedEvent,
     notify::{self, RecommendedWatcher, RecursiveMode},
 };
+use asynk_strim::{Yielder, stream_fn};
 use axum::{
     extract::State,
     response::{
@@ -11,17 +12,18 @@ use axum::{
     },
 };
 use bytes::BytesMut;
+use datastar::{consts::ElementPatchMode, prelude::PatchElements};
 use eyre::bail;
-use futures::{Stream, stream};
+use futures::Stream;
 use markdown::{CompileOptions, Constructs, Options, ParseOptions};
 use std::{
     convert::Infallible,
     fs,
     path::{Path, PathBuf},
-    sync::{Arc, RwLock, atomic::AtomicBool},
+    sync::{Arc, atomic::AtomicBool},
     time::Duration,
 };
-use tokio_stream::StreamExt as _;
+use tokio::sync::Mutex;
 use tracing::*;
 
 static CHANGED: AtomicBool = AtomicBool::new(false);
@@ -52,59 +54,58 @@ pub async fn event_handler(
     State(state): State<Arc<AppState>>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let binding = state.clone();
-    let local_state = binding.read().expect("Failed to unlock mutex");
 
-    let dir = local_state
-        .file
-        .parent()
-        .map(|s| s.to_owned())
-        .expect("Reading file error");
-
-    let filename = local_state.file.file_name().map(|s| s.to_owned());
-
-    tokio::spawn(async move {
-        let (mut file_events, _debouncer) = debounce_watch(dir)
+    let dir = {
+        binding
+            .lock()
             .await
-            .expect("Cannot get debouncer channel");
+            .file
+            .parent()
+            .map(|s| s.to_owned())
+            .expect("Reading file error")
+    };
 
-        while let Some(events) = file_events.recv().await {
-            match events {
-                Ok(evs) => {
-                    for ev in evs {
-                        info!(
-                            "File {:?} changed",
-                            ev.path.to_str().expect("Path invalid unicode")
-                        );
-                        if ev.path.file_name().map(|s| s.to_owned()) == filename {
-                            CHANGED.store(true, std::sync::atomic::Ordering::Relaxed);
+    let stream = stream_fn(
+        move |mut yielder: Yielder<Result<Event, Infallible>>| async move {
+            CHANGED.store(false, std::sync::atomic::Ordering::Relaxed);
+
+            let filename = { binding.lock().await.file.file_name().map(|s| s.to_owned()) };
+
+            let (mut file_events, _debouncer) = debounce_watch(dir)
+                .await
+                .expect("Cannot get debouncer channel");
+
+            while let Some(events) = file_events.recv().await {
+                match events {
+                    Ok(evs) => {
+                        for ev in evs {
+                            info!(
+                                "File {:?} changed",
+                                ev.path.to_str().expect("Path invalid unicode")
+                            );
+                            if ev.path.file_name().map(|s| s.to_owned()) == filename {
+                                let mut s = state.lock().await;
+                                let effect = s.reload_file().render();
+
+                                let html: String = match effect {
+                                    Ok(v) => v,
+                                    Err(err) => {
+                                        format!("Something weird happened:{}", err.to_string())
+                                    }
+                                };
+                                let patch = PatchElements::new(html)
+                                    .selector("article#markdown")
+                                    .mode(ElementPatchMode::Inner);
+                                let sse_event = patch.write_as_axum_sse_event();
+                                yielder.yield_item(Ok(sse_event)).await;
+                            }
                         }
                     }
+                    Err(_) => break,
                 }
-                Err(_) => panic!(),
             }
-        }
-    });
-
-    let stream = stream::repeat_with(move || {
-        let changed = CHANGED.load(std::sync::atomic::Ordering::Relaxed);
-        CHANGED.store(false, std::sync::atomic::Ordering::Relaxed);
-        if changed {
-            let s: Result<_, GlyphoError> = state.write().map_err(|err| err.into());
-            let effect: Result<_, GlyphoError> =
-                s.and_then(|mut state| state.reload_file().render().map_err(|e| e.into()));
-
-            let html: String = match effect {
-                Ok(v) => v,
-                Err(err) => format!("Something weird happened:{}", err.to_string()),
-            };
-
-            Event::default().data(html)
-        } else {
-            Event::default().data("false")
-        }
-    })
-    .map(Ok)
-    .throttle(Duration::from_millis(100));
+        },
+    );
 
     Sse::new(stream).keep_alive(
         axum::response::sse::KeepAlive::new()
@@ -120,8 +121,8 @@ pub async fn root(State(_): State<Arc<AppState>>) -> Html<String> {
 
 pub async fn init(State(state): State<Arc<AppState>>) -> Html<String> {
     let html = state
-        .write()
-        .expect("Cannot unlock mutex")
+        .lock()
+        .await
         .render()
         .expect("Cannot convert source markdown");
     Html(html)
@@ -249,4 +250,4 @@ impl InnerState {
     }
 }
 
-type AppState = RwLock<InnerState>;
+type AppState = Mutex<InnerState>;

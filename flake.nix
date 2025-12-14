@@ -90,16 +90,16 @@
         deb-package = pkgs.stdenv.mkDerivation {
           name = "my-rust-app-deb";
           src = ./.;
-          
-          nativeBuildInputs = [ pkgs.dpkg ];
-          buildInputs = [ glypho ];
-          
+
+          nativeBuildInputs = [pkgs.dpkg];
+          buildInputs = [glypho];
+
           buildPhase = ''
             mkdir -p package/usr/bin
             mkdir -p package/DEBIAN
-            
+
             cp ${glypho}/bin/glypho package/usr/bin/
-            
+
             # Create control file
             cat > package/DEBIAN/control <<EOF
             Package: glypho
@@ -112,7 +112,7 @@
              A simple Rust application packaged as .deb
             EOF
           '';
-          
+
           installPhase = ''
             mkdir -p $out
             dpkg-deb --build package $out/glypho_0.1.0_amd64.deb
@@ -182,6 +182,8 @@
                 systemfd
                 bacon
                 openssl
+                cargo-audit
+                cargo-machete
               ];
             }
         );

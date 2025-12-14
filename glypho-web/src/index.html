@@ -3,6 +3,11 @@
   <title>Preview</title>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <script type="module">
+      import "./datastar.js";
+    </script>
+
     <script type="module">
       import "./tex-mml-chtml.js";
     </script>
@@ -28,7 +33,7 @@
 
 <body class="bg-white text-black dark:bg-gray-900 dark:text-white">
     <main class="max-w-3xl mx-auto p-6">
-        <article id="markdown" class="prose lg:prose-lg dark:prose-invert">
+        <article id="markdown" data-on-load="@get('/sse')"  class="prose lg:prose-lg dark:prose-invert">
         </article>
     </main>
   <script type="module">
