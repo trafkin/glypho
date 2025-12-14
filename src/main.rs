@@ -7,8 +7,9 @@ use axum::{Router, routing::get};
 
 use bytes::BytesMut;
 use clap::Parser;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::{env, path::PathBuf};
+use tokio::sync::Mutex;
 use tower_http::services::ServeDir;
 use tracing::info;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
@@ -33,8 +34,8 @@ async fn main() -> eyre::Result<()> {
     info!("Starting Glypho...");
     let args = Args::parse();
 
-    let port = args.port;
-    // let file= PathBuf::from(args.input.filename());
+    let port = args.port.unwrap_or_else(|| 0);
+
     let file = match args.input {
         Some(f) => {
             if f.is_file() {
@@ -47,10 +48,10 @@ async fn main() -> eyre::Result<()> {
         None => return Err(GlyphoError::NotProvided.into()),
     };
 
-    let shared_state = Arc::new(RwLock::new(InnerState::new(
+    let shared_state = Arc::new(Mutex::new(InnerState::new(
         file.clone(),
         BytesMut::with_capacity(4096),
-    )));
+    )?));
 
     let serve_dir = ServeDir::new(file.parent().unwrap());
     let router = Router::new()
@@ -61,6 +62,7 @@ async fn main() -> eyre::Result<()> {
         .with_state(shared_state);
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await?;
+    let local_addr = listener.local_addr()?;
 
     let file_name = file
         .file_name()
@@ -75,7 +77,7 @@ async fn main() -> eyre::Result<()> {
     println!("");
 
     if !args.no_browser {
-        open::that_detached(format!("http://localhost:{port}"))?;
+        open::that_detached(format!("http://{local_addr}"))?;
     }
 
     axum::serve(listener, router).await?;
