@@ -7,6 +7,9 @@ use axum::{Router, routing::get};
 
 use bytes::BytesMut;
 use clap::Parser;
+use std::fs::File;
+use std::io::Write;
+use std::process::exit;
 use std::sync::Arc;
 use std::{env, path::PathBuf};
 use tokio::sync::Mutex;
@@ -27,11 +30,42 @@ use mimalloc::MiMalloc;
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
+fn cleanup() -> eyre::Result<()> {
+    let xdg_dirs = xdg::BaseDirectories::with_prefix("glypho");
+    let pid_file = xdg_dirs.find_runtime_file("running.pid");
+    if let Some(file) = pid_file {
+        std::fs::remove_file(file)?;
+    } else {
+        info!("Pid file cannot be removed");
+    }
+
+    Ok(())
+}
+
+fn check_uniqueness(port: u16) -> eyre::Result<()> {
+    let xdg_dirs = xdg::BaseDirectories::with_prefix("glypho");
+    let pid_file = xdg_dirs.find_runtime_file("running.pid");
+
+    match pid_file {
+        //do client mode
+        Some(_) => exit(0),
+        //create file and start server
+        None => {
+            let pid = xdg_dirs
+                .place_runtime_file("running.pid")
+                .expect("cannot create configuration directory");
+            let mut runtime_file = File::create(pid)?;
+            write!(&mut runtime_file, "port={port}")?;
+        }
+    }
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     color_eyre::install()?;
     logger();
-    info!("Starting Glypho...");
     let args = Args::parse();
 
     let port = args.port.unwrap_or_else(|| 0);
@@ -47,6 +81,9 @@ async fn main() -> eyre::Result<()> {
 
         None => return Err(GlyphoError::NotProvided.into()),
     };
+
+    check_uniqueness(port)?;
+    info!("Starting Glypho...");
 
     let shared_state = Arc::new(Mutex::new(InnerState::new(
         file.clone(),
@@ -73,14 +110,20 @@ async fn main() -> eyre::Result<()> {
         file_name,
         listener.local_addr().unwrap()
     );
+
     info!("Press Ctrl+C to stop the server");
-    println!("");
 
     if !args.no_browser {
         open::that_detached(format!("http://{local_addr}"))?;
     }
 
-    axum::serve(listener, router).await?;
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            cleanup()?;
+            info!("Shutting down the server");
+        }
+        _ = axum::serve(listener, router) => {}
+    }
 
     Ok(())
 }
