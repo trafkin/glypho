@@ -3,6 +3,7 @@ mod error;
 mod state;
 mod template;
 
+use axum::routing::post;
 use axum::{Router, routing::get};
 
 use bytes::BytesMut;
@@ -20,7 +21,7 @@ use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 use crate::error::GlyphoError;
 use crate::{
     cli::Args,
-    state::{InnerState, event_handler, init, root},
+    state::{InnerState, event_handler, root},
 };
 
 #[cfg(target_env = "musl")]
@@ -85,15 +86,12 @@ async fn main() -> eyre::Result<()> {
     check_uniqueness(port)?;
     info!("Starting Glypho...");
 
-    let shared_state = Arc::new(Mutex::new(InnerState::new(
-        file.clone(),
-        BytesMut::with_capacity(4096),
-    )?));
+    let shared_state = Arc::new(Mutex::new(InnerState::new(file.clone())));
 
     let serve_dir = ServeDir::new(file.parent().unwrap());
     let router = Router::new()
         .route("/", get(root))
-        .route("/init", get(init))
+        // .route("/init", get(init))
         .fallback_service(serve_dir)
         .route("/sse", get(event_handler))
         .with_state(shared_state);

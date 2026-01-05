@@ -7,19 +7,21 @@ use asynk_strim::{Yielder, stream_fn};
 use axum::{
     extract::State,
     response::{
-        Html,
+        Html, IntoResponse,
         sse::{Event, Sse},
     },
 };
 use bytes::BytesMut;
 use datastar::{
+    axum::ReadSignals,
     consts::ElementPatchMode,
-    prelude::{ExecuteScript, PatchElements},
+    prelude::{ExecuteScript, PatchElements, PatchSignals},
 };
 use eyre::bail;
-use futures::Stream;
 use markdown::{CompileOptions, Constructs, Options, ParseOptions};
+use serde::{Deserialize, Serialize};
 use std::{
+    collections::BTreeMap,
     convert::Infallible,
     fs,
     path::{Path, PathBuf},
@@ -30,6 +32,12 @@ use tokio::sync::Mutex;
 use tracing::*;
 
 static CHANGED: AtomicBool = AtomicBool::new(false);
+
+#[derive(Serialize, Deserialize)]
+pub struct Signals {
+    pub file: Option<String>,
+    pub first: bool,
+}
 
 pub async fn debounce_watch<P: AsRef<Path>>(
     path: P,
@@ -55,24 +63,57 @@ pub async fn debounce_watch<P: AsRef<Path>>(
 
 pub async fn event_handler(
     State(state): State<Arc<AppState>>,
-) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    let binding = state.clone();
-
-    let dir = {
-        binding
-            .lock()
-            .await
-            .file
-            .parent()
-            .map(|s| s.to_owned())
-            .expect("Reading file error")
-    };
-
+    ReadSignals(signals): ReadSignals<Signals>,
+) -> impl IntoResponse {
     let stream = stream_fn(
         move |mut yielder: Yielder<Result<Event, Infallible>>| async move {
-            CHANGED.store(false, std::sync::atomic::Ordering::Relaxed);
+            let first_run = signals.first;
+            let active_file = signals.file;
 
-            let filename = { binding.lock().await.file.file_name().map(|s| s.to_owned()) };
+            let first_file = {
+                state
+                    .lock()
+                    .await
+                    .files
+                    .first_key_value()
+                    .unwrap()
+                    .0
+                    .clone()
+            };
+            let file = first_file.clone();
+
+            if first_run {
+                let html = state
+                    .lock()
+                    .await
+                    .render(&first_file)
+                    .expect("Cannot convert source markdown");
+
+                let patch = PatchElements::new(html)
+                    .selector("article#markdown")
+                    .mode(ElementPatchMode::Inner);
+                let sse_event = patch.write_as_axum_sse_event();
+                yielder.yield_item(Ok(sse_event)).await;
+
+                let script = ExecuteScript::new(
+                    "Prism.highlightAllUnder(document.querySelector('article#markdown'));MathJax.typeset();",
+                );
+                let sse_event = script.write_as_axum_sse_event();
+                yielder.yield_item(Ok(sse_event)).await;
+                let first_run_patch = PatchSignals::new(r#"{{"first": false}}"#);
+                let sse_event = first_run_patch.write_as_axum_sse_event();
+
+                yielder.yield_item(Ok(sse_event)).await;
+
+                let path: String = first_file.into_os_string().into_string().unwrap();
+
+                let patch = PatchSignals::new(format!(r#"{{"file":{path} }}"#));
+                let sse_event = patch.write_as_axum_sse_event();
+                yielder.yield_item(Ok(sse_event)).await;
+            }
+
+            let dir = file.parent().expect("Reading file error");
+            CHANGED.store(false, std::sync::atomic::Ordering::Relaxed);
 
             let (mut file_events, _debouncer) = debounce_watch(dir)
                 .await
@@ -86,11 +127,25 @@ pub async fn event_handler(
                                 "File {:?} changed",
                                 ev.path.to_str().expect("Path invalid unicode")
                             );
-                            if ev.path.file_name().map(|s| s.to_owned()) == filename {
+                            if ev
+                                .path
+                                .file_name()
+                                .zip(file.file_name())
+                                .map(|(f1, f2)| f1 == f2)
+                                .unwrap_or(false)
+                            {
                                 let mut s = state.lock().await;
-                                let effect = s.reload_file().render();
+                                let buffer = s.files.get(&file).map(|b| b.to_owned());
+                                let rendered = s.render(&file);
 
-                                let html: String = match effect {
+                                rendered.as_ref().ok().zip(buffer).and_then(|(html, buf)| {
+                                    s.reload_file(&file, buf.to_owned(), html.clone());
+                                    Some(())
+                                });
+
+                                // s.reload_file(file, buffer.unwrap(), rendered);
+
+                                let html: String = match rendered {
                                     Ok(v) => v,
                                     Err(err) => {
                                         format!("Something weird happened:{}", err.to_string())
@@ -128,40 +183,46 @@ pub async fn root(State(_): State<Arc<AppState>>) -> Html<String> {
     Html(html)
 }
 
-pub async fn init(State(state): State<Arc<AppState>>) -> Html<String> {
-    let html = state
-        .lock()
-        .await
-        .render()
-        .expect("Cannot convert source markdown");
-    Html(html)
-}
+// pub async fn init(State(state): State<Arc<AppState>>) -> Html<String> {
+//     let first_file = {};
+//
+//     let html = {
+//         state
+//             .lock()
+//             .await
+//             .render(&first_file.expect("File not found"))
+//             .expect("Cannot convert source markdown")
+//     };
+//
+//     Html(html)
+// }
 
 pub struct InnerState {
-    file: PathBuf,
-    rendered: BytesMut,
+    files: Box<BTreeMap<PathBuf, BytesMut>>,
 }
 
 impl InnerState {
-    pub fn new(file: PathBuf, rendered: BytesMut) -> eyre::Result<Self> {
-        let mut s = InnerState { file, rendered };
-        s.render()?;
-        Ok(s)
+    pub fn new(first_file: PathBuf) -> Self {
+        let mut files: Box<BTreeMap<PathBuf, BytesMut>> = Box::new(BTreeMap::new());
+        let buffer = BytesMut::with_capacity(4096);
+
+        files.insert(first_file, buffer);
+        let s = InnerState { files };
+
+        s
     }
 
-    fn reload_file(&mut self) -> &mut Self {
-        self.rendered.clear();
-        let html = self
-            .render()
-            .expect("Cannot unlock mutex")
-            .as_bytes()
-            .into();
-        self.rendered = html;
+    fn reload_file(&mut self, file: &PathBuf, mut buffer: BytesMut, html: String) -> &mut Self {
+        buffer.clear();
+        buffer = html.as_bytes().into();
+
+        self.files.insert(file.to_path_buf(), buffer);
         self
     }
 
-    fn render(&mut self) -> eyre::Result<String> {
-        let content = match fs::read_to_string(&self.file) {
+    fn render(&mut self, file: &PathBuf) -> eyre::Result<String> {
+        let (file, buffer) = self.files.get_key_value(file).unzip();
+        let content = match fs::read_to_string(file.expect("file not being tracked")) {
             Ok(c) => c,
             Err(err) => match err.kind() {
                 std::io::ErrorKind::NotFound => bail!("The file or directory does not exist"),
@@ -254,7 +315,6 @@ impl InnerState {
                     m_source: *message.source,
                 }
             })?;
-
         Ok(body)
     }
 }
