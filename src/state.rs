@@ -294,6 +294,9 @@ impl InnerState {
                     gfm_task_list_item: true,
                     attention: true,
                     frontmatter: true,
+                    gfm_footnote_definition: true,
+                    autolink: true,
+                    gfm_autolink_literal: true,
                     ..Constructs::gfm()
                 },
                 gfm_strikethrough_single_tilde: true,
@@ -301,6 +304,7 @@ impl InnerState {
             },
             compile: CompileOptions {
                 allow_dangerous_html: true,
+
                 ..CompileOptions::gfm()
             },
             ..Options::default()
