@@ -123,7 +123,7 @@ pub async fn event_handler(
                 match events {
                     Ok(evs) => {
                         for ev in evs {
-                            info!(
+                            debug!(
                                 "File {:?} changed",
                                 ev.path.to_str().expect("Path invalid unicode")
                             );

@@ -3,11 +3,10 @@ mod error;
 mod state;
 mod template;
 
-use axum::routing::post;
 use axum::{Router, routing::get};
 
-use bytes::BytesMut;
 use clap::Parser;
+use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Write;
 use std::process::exit;
@@ -31,6 +30,12 @@ use mimalloc::MiMalloc;
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
+#[derive(Serialize, Deserialize)]
+struct ProcessStatus {
+    pub port: u16,
+    pub pid: u32,
+}
+
 fn cleanup() -> eyre::Result<()> {
     let xdg_dirs = xdg::BaseDirectories::with_prefix("glypho");
     let pid_file = xdg_dirs.find_runtime_file("running.pid");
@@ -43,20 +48,34 @@ fn cleanup() -> eyre::Result<()> {
     Ok(())
 }
 
-fn check_uniqueness(port: u16) -> eyre::Result<()> {
+async fn check_uniqueness(port: u16) -> eyre::Result<()> {
     let xdg_dirs = xdg::BaseDirectories::with_prefix("glypho");
     let pid_file = xdg_dirs.find_runtime_file("running.pid");
 
     match pid_file {
         //do client mode
-        Some(_) => exit(0),
+        Some(pid_file) => {
+            let file = tokio::fs::read_to_string(pid_file).await?;
+            let ps: ProcessStatus = toml::from_str(file.as_str())?;
+            let pid = ps.pid;
+            let process_dir = format!("/proc/{pid}");
+
+            if std::fs::exists(PathBuf::from(process_dir))? {
+                exit(0)
+            }
+        }
         //create file and start server
         None => {
-            let pid = xdg_dirs
+            let pid_file = xdg_dirs
                 .place_runtime_file("running.pid")
                 .expect("cannot create configuration directory");
-            let mut runtime_file = File::create(pid)?;
-            write!(&mut runtime_file, "port={port}")?;
+            let mut runtime_file = File::create(pid_file)?;
+            let pid = std::process::id();
+
+            let ps = ProcessStatus { port, pid };
+            let toml_string = toml::to_string(&ps)?;
+
+            write!(&mut runtime_file, "{toml_string}")?;
         }
     }
 
@@ -83,7 +102,7 @@ async fn main() -> eyre::Result<()> {
         None => return Err(GlyphoError::NotProvided.into()),
     };
 
-    check_uniqueness(port)?;
+    check_uniqueness(port).await?;
     info!("Starting Glypho...");
 
     let shared_state = Arc::new(Mutex::new(InnerState::new(file.clone())));
