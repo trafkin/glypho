@@ -39,7 +39,6 @@
         rustVersion = rustToolchain;
 
         src = let
-          fs = pkgs.lib.fileset;
           unfilteredRoot = ./.; # The original, unfiltered source
           files = pkgs.lib.fileset.unions [
             (craneLib.fileset.commonCargoSources unfilteredRoot)

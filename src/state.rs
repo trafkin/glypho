@@ -1,11 +1,12 @@
-use crate::{error::GlyphoError, template::TEMPLATE};
+use crate::{error::GlyphoError, template::TEMPLATE, wikilinks::wikilinks_to_markdown};
 use async_watcher::{
     AsyncDebouncer, DebouncedEvent,
     notify::{self, RecommendedWatcher, RecursiveMode},
 };
 use asynk_strim::{Yielder, stream_fn};
 use axum::{
-    extract::State,
+    Json,
+    extract::{self, State},
     response::{
         Html, IntoResponse,
         sse::{Event, Sse},
@@ -18,6 +19,7 @@ use datastar::{
     prelude::{ExecuteScript, PatchElements, PatchSignals},
 };
 use eyre::bail;
+use futures::FutureExt;
 use markdown::{CompileOptions, Constructs, Options, ParseOptions};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -25,18 +27,30 @@ use std::{
     convert::Infallible,
     fs,
     path::{Path, PathBuf},
-    sync::{Arc, atomic::AtomicBool},
+    sync::Arc,
     time::Duration,
 };
-use tokio::sync::Mutex;
-use tracing::*;
+use tokio::sync::{
+    Mutex, MutexGuard,
+    broadcast::{self, Sender},
+};
 
-static CHANGED: AtomicBool = AtomicBool::new(false);
+use tracing::*;
 
 #[derive(Serialize, Deserialize)]
 pub struct Signals {
-    pub file: Option<String>,
+    pub file: Option<PathBuf>,
     pub first: bool,
+}
+
+#[derive(Deserialize)]
+pub struct AddFileRequest {
+    pub file: PathBuf,
+}
+
+#[derive(Serialize)]
+pub struct AddFileResponse {
+    pub ok: bool,
 }
 
 pub async fn debounce_watch<P: AsRef<Path>>(
@@ -51,7 +65,7 @@ pub async fn debounce_watch<P: AsRef<Path>>(
     let (tx, rx) = tokio::sync::mpsc::channel(100);
 
     let mut debouncer =
-        AsyncDebouncer::new(Duration::from_secs(1), Some(Duration::from_secs(1)), tx).await?;
+        AsyncDebouncer::new(Duration::from_secs(10), Some(Duration::from_secs(9)), tx).await?;
 
     // Add the paths to the watcher
     debouncer
@@ -61,37 +75,175 @@ pub async fn debounce_watch<P: AsRef<Path>>(
     Ok((rx, debouncer))
 }
 
+pub async fn watch_file(file: PathBuf, state: Arc<AppState>) {
+    let local_state = state.clone();
+
+    if !local_state
+        .lock()
+        .await
+        .watched_files
+        .iter()
+        .any(|v| v == &file)
+    {
+        local_state.lock().await.watched_files.push(file.clone());
+        debug!("file not watched");
+        tokio::spawn(async move {
+            let dir = file.parent().expect("Reading file error");
+            let (mut file_events, _debouncer) = debounce_watch(dir)
+                .await
+                .expect("Cannot get debouncer channel");
+            while let Some(file_watcher_events) = file_events.recv().await {
+                if let Ok(evs) = file_watcher_events {
+                    for ev in evs {
+                        debug!(
+                            "File {:?} changed",
+                            ev.path.to_str().expect("Path invalid unicode")
+                        );
+                        if ev
+                            .path
+                            .file_name()
+                            .zip(file.file_name())
+                            .map(|(f1, f2)| f1 == f2)
+                            .unwrap_or(false)
+                        {
+                            // let mut s = local_state.lock().await;
+                            let buffer = {
+                                local_state
+                                    .lock()
+                                    .await
+                                    .files
+                                    .get(&file)
+                                    .map(|b| b.to_owned())
+                            };
+                            let rendered = { local_state.lock().await.render(&file) };
+
+                            {
+                                let mut s = local_state.lock().await;
+                                if let Some((html, buf)) = rendered.as_ref().ok().zip(buffer) {
+                                    s.reload_file(&file, buf.to_owned(), html.clone());
+                                };
+                            }
+
+                            // s.reload_file(file, buffer.unwrap(), rendered);
+
+                            let html: String = match rendered {
+                                Ok(v) => v,
+                                Err(err) => {
+                                    format!("Something weird happened:{}", err)
+                                }
+                            };
+
+                            let _ = {
+                                local_state.lock().await.event_sender.send(
+                                    SignalEvents::UpdatedFile {
+                                        updated_file: file.clone(),
+                                        html,
+                                    },
+                                )
+                            };
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+
+pub async fn add_file(
+    State(state): State<Arc<AppState>>,
+    extract::Json(file_request): extract::Json<AddFileRequest>,
+) -> impl IntoResponse {
+    let buffer = BytesMut::with_capacity(4096);
+    let file = file_request.file.clone();
+    state
+        .lock()
+        .then(|mut s: MutexGuard<InnerState>| async move {
+            s.files.insert(file_request.file.clone(), buffer);
+        })
+        .await;
+
+    watch_file(file, state.clone()).await;
+
+    let _ = state
+        .lock()
+        .await
+        .event_sender
+        .send(SignalEvents::AddedNewFile);
+
+    Json(AddFileResponse { ok: true })
+}
+
+pub async fn change_active(
+    State(state): State<Arc<AppState>>,
+    ReadSignals(signals): ReadSignals<Signals>,
+) -> impl IntoResponse {
+    state
+        .lock()
+        .then(|mut s: MutexGuard<InnerState>| async move {
+            match signals.file {
+                Some(ref f) => {
+                    s.active_file = f.clone();
+                }
+                None => {
+                    debug!("file not found");
+                }
+            };
+            let _ = s.event_sender.send(SignalEvents::ActiveFileChanged);
+        })
+        .await;
+    Json(AddFileResponse { ok: true })
+}
+
 pub async fn event_handler(
     State(state): State<Arc<AppState>>,
     ReadSignals(signals): ReadSignals<Signals>,
 ) -> impl IntoResponse {
+    // stream over broadcast events
+
     let stream = stream_fn(
         move |mut yielder: Yielder<Result<Event, Infallible>>| async move {
-            let first_run = signals.first;
-            let active_file = signals.file;
+            // render and start listening file changes
+            // todo!();
+            let local_state = state.clone();
 
-            let first_file = {
-                state
-                    .lock()
-                    .await
-                    .files
-                    .first_key_value()
-                    .unwrap()
-                    .0
-                    .clone()
-            };
-            let file = first_file.clone();
+            if signals.first {
+                // let mut s = local_state.lock().await;
+                let file = { local_state.lock().await.active_file.clone() };
 
-            if first_run {
-                let html = state
-                    .lock()
-                    .await
-                    .render(&first_file)
-                    .expect("Cannot convert source markdown");
+                let buffer = {
+                    local_state
+                        .lock()
+                        .await
+                        .files
+                        .get(&file)
+                        .map(|b| b.to_owned())
+                };
+                let rendered = { local_state.lock().await.render(&file) };
+
+                {
+                    let mut s = local_state.lock().await;
+                    if let Some((html, buf)) = rendered.as_ref().ok().zip(buffer) {
+                        s.reload_file(&file, buf.to_owned(), html.clone());
+                    };
+                }
+
+                // s.reload_file(file, buffer.unwrap(), rendered);
+
+                let html: String = match rendered {
+                    Ok(v) => v,
+                    Err(err) => {
+                        format!("Something weird happened:{}", err)
+                    }
+                };
+                let patch = PatchSignals::new(r#"{{"first": false}}"#);
+
+                let sse_event = patch.write_as_axum_sse_event();
+                yielder.yield_item(Ok(sse_event)).await;
 
                 let patch = PatchElements::new(html)
                     .selector("article#markdown")
                     .mode(ElementPatchMode::Inner);
+
                 let sse_event = patch.write_as_axum_sse_event();
                 yielder.yield_item(Ok(sse_event)).await;
 
@@ -100,119 +252,194 @@ pub async fn event_handler(
                 );
                 let sse_event = script.write_as_axum_sse_event();
                 yielder.yield_item(Ok(sse_event)).await;
-                let first_run_patch = PatchSignals::new(r#"{{"first": false}}"#);
-                let sse_event = first_run_patch.write_as_axum_sse_event();
+            }
+            let len = { state.lock().await.watched_files.len() };
+            if len > 1 {
+                let mut buttons = vec![];
+                for path in state.lock().await.watched_files.iter() {
+                    let filename = path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_os_string()
+                        .into_string()
+                        .unwrap_or_default();
+                    let string_path = path
+                        .clone()
+                        .into_os_string()
+                        .into_string()
+                        .unwrap_or_default();
 
-                yielder.yield_item(Ok(sse_event)).await;
+                    let button = format!(
+                        "<button id ='{string_path}' class='rounded-md px-5 py-2.5 leading-5 font-semibold' data-on:click=\"$file = '{string_path}';@get('/update') >{filename}</button>\n"
+                    );
+                    buttons.push(button);
+                }
 
-                let path: String = first_file.into_os_string().into_string().unwrap();
-
-                let patch = PatchSignals::new(format!(r#"{{"file":{path} }}"#));
+                let patch = PatchElements::new(buttons.join("\n"))
+                    .selector("nav#navbar")
+                    .mode(ElementPatchMode::Replace);
                 let sse_event = patch.write_as_axum_sse_event();
                 yielder.yield_item(Ok(sse_event)).await;
             }
 
-            let dir = file.parent().expect("Reading file error");
-            CHANGED.store(false, std::sync::atomic::Ordering::Relaxed);
+            let mut events = { state.lock().await.event_sender.subscribe() };
 
-            let (mut file_events, _debouncer) = debounce_watch(dir)
-                .await
-                .expect("Cannot get debouncer channel");
-
-            while let Some(events) = file_events.recv().await {
-                match events {
-                    Ok(evs) => {
-                        for ev in evs {
-                            debug!(
-                                "File {:?} changed",
-                                ev.path.to_str().expect("Path invalid unicode")
-                            );
-                            if ev
-                                .path
+            while let Ok(signal_events) = events.recv().await {
+                match signal_events {
+                    SignalEvents::AddedNewFile => {
+                        let mut buttons = vec![];
+                        for path in state.lock().await.watched_files.iter() {
+                            let filename = path
                                 .file_name()
-                                .zip(file.file_name())
-                                .map(|(f1, f2)| f1 == f2)
-                                .unwrap_or(false)
-                            {
-                                let mut s = state.lock().await;
-                                let buffer = s.files.get(&file).map(|b| b.to_owned());
-                                let rendered = s.render(&file);
+                                .unwrap_or_default()
+                                .to_os_string()
+                                .into_string()
+                                .unwrap();
+                            let string_path = path.clone().into_os_string().into_string().unwrap();
 
-                                rendered.as_ref().ok().zip(buffer).and_then(|(html, buf)| {
-                                    s.reload_file(&file, buf.to_owned(), html.clone());
-                                    Some(())
-                                });
-
-                                // s.reload_file(file, buffer.unwrap(), rendered);
-
-                                let html: String = match rendered {
-                                    Ok(v) => v,
-                                    Err(err) => {
-                                        format!("Something weird happened:{}", err.to_string())
-                                    }
-                                };
-                                let patch = PatchElements::new(html)
-                                    .selector("article#markdown")
-                                    .mode(ElementPatchMode::Inner);
-                                let sse_event = patch.write_as_axum_sse_event();
-                                yielder.yield_item(Ok(sse_event)).await;
-
-                                let script = ExecuteScript::new(
-                                    "Prism.highlightAllUnder(document.querySelector('article#markdown'));MathJax.typeset();",
-                                );
-                                let sse_event = script.write_as_axum_sse_event();
-                                yielder.yield_item(Ok(sse_event)).await;
-                            }
+                            let button = format!(
+                                "<button id ='{string_path}' class='rounded-md px-5 py-2.5 leading-5 font-semibold' data-on:click=\"$file = '{string_path}';@get('/update')\">{filename}</button><br />"
+                            );
+                            buttons.push(button);
                         }
+                        let html = buttons.join("\n");
+                        let patch = PatchElements::new(html)
+                            .selector("nav#navbar")
+                            .mode(ElementPatchMode::Inner);
+                        let sse_event = patch.write_as_axum_sse_event();
+                        yielder.yield_item(Ok(sse_event)).await;
                     }
-                    Err(_) => break,
-                }
+
+                    SignalEvents::UpdatedFile { updated_file, html } => {
+                        // from inotify
+                        // send html signals
+                        let active = { local_state.lock().await.active_file.clone() };
+                        if active == updated_file {
+                            let patch = PatchElements::new(html)
+                                .selector("article#markdown")
+                                .mode(ElementPatchMode::Inner);
+                            let sse_event = patch.write_as_axum_sse_event();
+                            yielder.yield_item(Ok(sse_event)).await;
+
+                            let script = ExecuteScript::new(
+                                "Prism.highlightAllUnder(document.querySelector('article#markdown'));MathJax.typeset();",
+                            );
+                            let sse_event = script.write_as_axum_sse_event();
+                            yielder.yield_item(Ok(sse_event)).await;
+                        }
+
+                        let patch = PatchSignals::new(r#"{{"first": false}}"#);
+
+                        let sse_event = patch.write_as_axum_sse_event();
+                        yielder.yield_item(Ok(sse_event)).await;
+                    }
+                    SignalEvents::ActiveFileChanged => {
+                        // signal active file
+                        //
+                        let file = { local_state.lock().await.active_file.clone() };
+
+                        let buffer = {
+                            local_state
+                                .lock()
+                                .await
+                                .files
+                                .get(&file)
+                                .map(|b| b.to_owned())
+                        };
+                        let rendered = { local_state.lock().await.render(&file) };
+
+                        {
+                            let mut s = local_state.lock().await;
+                            if let Some((html, buf)) = rendered.as_ref().ok().zip(buffer) {
+                                s.reload_file(&file, buf.to_owned(), html.clone());
+                            };
+                        }
+
+                        // s.reload_file(file, buffer.unwrap(), rendered);
+
+                        let html: String = match rendered {
+                            Ok(v) => v,
+                            Err(err) => {
+                                format!("Something weird happened:{}", err)
+                            }
+                        };
+
+                        let patch = PatchElements::new(html)
+                            .selector("article#markdown")
+                            .mode(ElementPatchMode::Inner);
+                        let sse_event = patch.write_as_axum_sse_event();
+                        yielder.yield_item(Ok(sse_event)).await;
+
+                        let script = ExecuteScript::new(
+                            "Prism.highlightAllUnder(document.querySelector('article#markdown'));MathJax.typeset();",
+                        );
+                        let sse_event = script.write_as_axum_sse_event();
+                        yielder.yield_item(Ok(sse_event)).await;
+
+                        let script = ExecuteScript::new(
+                            "Prism.highlightAllUnder(document.querySelector('article#markdown'));MathJax.typeset();",
+                        );
+                        let sse_event = script.write_as_axum_sse_event();
+                        yielder.yield_item(Ok(sse_event)).await;
+                        let patch = PatchSignals::new(r#"{{"first": false}}"#);
+                        let sse_event = patch.write_as_axum_sse_event();
+                        yielder.yield_item(Ok(sse_event)).await;
+                    }
+                };
             }
         },
     );
 
     Sse::new(stream).keep_alive(
         axum::response::sse::KeepAlive::new()
-            .interval(Duration::from_millis(1000))
+            .interval(Duration::from_millis(100))
             .text("keep-alive-text"),
     )
 }
 
-pub async fn root(State(_): State<Arc<AppState>>) -> Html<String> {
+pub async fn root(State(state): State<Arc<AppState>>) -> Html<String> {
+    let local_state = state.clone();
+
+    let file = { local_state.lock().await.active_file.clone() };
+
+    watch_file(file, state.clone()).await;
+
     let html = TEMPLATE.to_string();
     Html(html)
 }
 
-// pub async fn init(State(state): State<Arc<AppState>>) -> Html<String> {
-//     let first_file = {};
-//
-//     let html = {
-//         state
-//             .lock()
-//             .await
-//             .render(&first_file.expect("File not found"))
-//             .expect("Cannot convert source markdown")
-//     };
-//
-//     Html(html)
-// }
+#[derive(Clone, Debug)]
+pub enum SignalEvents {
+    // WatchFile { file: PathBuf },
+    AddedNewFile,
+    UpdatedFile { updated_file: PathBuf, html: String },
+    ActiveFileChanged,
+}
 
 pub struct InnerState {
-    files: Box<BTreeMap<PathBuf, BytesMut>>,
+    files: BTreeMap<PathBuf, BytesMut>,
+    active_file: PathBuf,
+    event_sender: Sender<SignalEvents>,
+    // event_reciever: Receiver<SignalEvents>,
+    watched_files: Vec<PathBuf>,
 }
 
 impl InnerState {
     pub fn new(first_file: PathBuf) -> Self {
-        let mut files: Box<BTreeMap<PathBuf, BytesMut>> = Box::new(BTreeMap::new());
+        let mut files: BTreeMap<PathBuf, BytesMut> = BTreeMap::new();
         let buffer = BytesMut::with_capacity(4096);
+        let (event_sender, _) = broadcast::channel(32);
 
-        files.insert(first_file, buffer);
-        let s = InnerState { files };
-
-        s
+        files.insert(first_file.clone(), buffer);
+        InnerState {
+            files,
+            active_file: first_file,
+            event_sender,
+            watched_files: vec![],
+        }
     }
 
-    fn reload_file(&mut self, file: &PathBuf, mut buffer: BytesMut, html: String) -> &mut Self {
+    fn reload_file(&mut self, file: &Path, mut buffer: BytesMut, html: String) -> &mut Self {
         buffer.clear();
         buffer = html.as_bytes().into();
 
@@ -221,7 +448,7 @@ impl InnerState {
     }
 
     fn render(&mut self, file: &PathBuf) -> eyre::Result<String> {
-        let (file, buffer) = self.files.get_key_value(file).unzip();
+        let (file, _buffer) = self.files.get_key_value(file).unzip();
         let content = match fs::read_to_string(file.expect("file not being tracked")) {
             Ok(c) => c,
             Err(err) => match err.kind() {
@@ -307,11 +534,12 @@ impl InnerState {
 
                 ..CompileOptions::gfm()
             },
-            ..Options::default()
         };
 
+        let with_wikilinks = wikilinks_to_markdown(&content);
+
         let body =
-            markdown::to_html_with_options(&content.clone(), &options).map_err(|message| {
+            markdown::to_html_with_options(&with_wikilinks, &options).map_err(|message| {
                 GlyphoError::MarkdownError {
                     place: message.place,
                     reason: message.reason,

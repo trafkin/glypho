@@ -1,1 +1,1 @@
-pub static TEMPLATE: &'static str = include_str!("template.html");
+pub static TEMPLATE: &str = include_str!("template.html");

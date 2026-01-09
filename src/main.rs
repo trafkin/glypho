@@ -2,7 +2,9 @@ mod cli;
 mod error;
 mod state;
 mod template;
+mod wikilinks;
 
+use axum::routing::post;
 use axum::{Router, routing::get};
 
 use clap::Parser;
@@ -18,6 +20,7 @@ use tracing::info;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 use crate::error::GlyphoError;
+use crate::state::{add_file, change_active};
 use crate::{
     cli::Args,
     state::{InnerState, event_handler, root},
@@ -88,7 +91,7 @@ async fn main() -> eyre::Result<()> {
     logger();
     let args = Args::parse();
 
-    let port = args.port.unwrap_or_else(|| 0);
+    let port = args.port.unwrap_or(0);
 
     let file = match args.input {
         Some(f) => {
@@ -113,6 +116,8 @@ async fn main() -> eyre::Result<()> {
         // .route("/init", get(init))
         .fallback_service(serve_dir)
         .route("/sse", get(event_handler))
+        .route("/add", post(add_file))
+        .route("/update", get(change_active))
         .with_state(shared_state);
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await?;
@@ -166,6 +171,4 @@ fn logger() {
                 .expect("error in EnvFilter (Logger)"),
         )
         .init();
-
-    println!("");
 }
