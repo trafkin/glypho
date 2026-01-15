@@ -20,7 +20,7 @@ use tracing::info;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 use crate::error::GlyphoError;
-use crate::state::{add_file, change_active};
+use crate::state::{AddFileRequest, add_file, change_active};
 use crate::{
     cli::Args,
     state::{InnerState, event_handler, root},
@@ -51,7 +51,7 @@ fn cleanup() -> eyre::Result<()> {
     Ok(())
 }
 
-async fn check_uniqueness(port: u16) -> eyre::Result<()> {
+async fn check_uniqueness(file_to_add: PathBuf) -> eyre::Result<()> {
     let xdg_dirs = xdg::BaseDirectories::with_prefix("glypho");
     let pid_file = xdg_dirs.find_runtime_file("running.pid");
 
@@ -64,24 +64,39 @@ async fn check_uniqueness(port: u16) -> eyre::Result<()> {
             let process_dir = format!("/proc/{pid}");
 
             if std::fs::exists(PathBuf::from(process_dir))? {
+                let port = ps.port;
+                let client = reqwest::Client::new();
+                let _res = client
+                    .post(format!("http://localhost:{port}/add"))
+                    .json(&AddFileRequest {
+                        file: file_to_add.clone(),
+                    })
+                    .send()
+                    .await?;
                 exit(0)
             }
         }
         //create file and start server
-        None => {
-            let pid_file = xdg_dirs
-                .place_runtime_file("running.pid")
-                .expect("cannot create configuration directory");
-            let mut runtime_file = File::create(pid_file)?;
-            let pid = std::process::id();
-
-            let ps = ProcessStatus { port, pid };
-            let toml_string = toml::to_string(&ps)?;
-
-            write!(&mut runtime_file, "{toml_string}")?;
-        }
+        None => (),
     }
 
+    Ok(())
+}
+
+fn write_runtime(port: u16) -> eyre::Result<()> {
+    let xdg_dirs = xdg::BaseDirectories::with_prefix("glypho");
+
+    let pid_file = xdg_dirs
+        .place_runtime_file("running.pid")
+        .expect("cannot create configuration directory");
+
+    let mut runtime_file = File::create(pid_file)?;
+    let pid = std::process::id();
+
+    let ps = ProcessStatus { port, pid };
+    let toml_string = toml::to_string(&ps)?;
+
+    write!(&mut runtime_file, "{toml_string}")?;
     Ok(())
 }
 
@@ -105,7 +120,7 @@ async fn main() -> eyre::Result<()> {
         None => return Err(GlyphoError::NotProvided.into()),
     };
 
-    check_uniqueness(port).await?;
+    let _ = check_uniqueness(file.clone()).await?;
     info!("Starting Glypho...");
 
     let shared_state = Arc::new(Mutex::new(InnerState::new(file.clone())));
@@ -122,6 +137,7 @@ async fn main() -> eyre::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await?;
     let local_addr = listener.local_addr()?;
+    write_runtime(local_addr.port())?;
 
     let file_name = file
         .file_name()

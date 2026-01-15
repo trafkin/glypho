@@ -43,7 +43,7 @@ pub struct Signals {
     pub first: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct AddFileRequest {
     pub file: PathBuf,
 }
@@ -270,7 +270,7 @@ pub async fn event_handler(
                         .unwrap_or_default();
 
                     let button = format!(
-                        "<button id ='{string_path}' class='rounded-md px-5 py-2.5 leading-5 font-semibold' data-on:click=\"$file = '{string_path}';@get('/update') >{filename}</button>\n"
+                        "<button id ='{string_path}' class='rounded-md px-5 py-2.5 leading-5 font-semibold' data-on:click=\"$file = '{string_path}';@get('/update')\" >{filename}</button>\n"
                     );
                     buttons.push(button);
                 }

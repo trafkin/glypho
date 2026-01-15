@@ -22,15 +22,8 @@
           (import rust-overlay)
         ];
 
-        stdenv = pkgs.stdenvAdapters.useMoldLinker pkgs.stdenv;
         rustToolchain = pkgs.rust-bin.stable.latest.default.override {
           targets = ["x86_64-unknown-linux-musl"];
-        };
-
-        rustPlatform = pkgs.makeRustPlatform {
-          cargo = rustToolchain;
-          rustc = rustToolchain;
-          inherit stdenv;
         };
 
         craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
@@ -59,7 +52,10 @@
         commonArgs = {
           inherit src;
           CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
-          CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static -C linker=clang -C link-arg=-fuse-ld=${pkgs.mold}/bin/mold";
+          CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static -Clink-arg=-fuse-ld=lld";
+          PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
+          OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include";
+          OPENSSL_LIB_DIR = "${pkgs.lib.getLib pkgs.openssl}/lib";
           buildInputs = with pkgs; [
             openssl
             nodejs
@@ -67,9 +63,10 @@
           ];
           nativeBuildInputs = with pkgs; [
             clang
-            mold
             upx
             pkg-config
+            llvmPackages.bintools
+            gdb
           ];
         };
 
@@ -139,52 +136,52 @@
         };
 
         devShells.default = (
-          let
-            moldDevShell = craneLib.devShell.override {
-              # For example, use the mold linker
-              mkShell = pkgs.mkShell.override {
-                inherit stdenv;
-              };
-            };
-          in
-            moldDevShell {
-              RUSTC_WRAPPER = "${pkgs.sccache}/bin/sccache";
-              CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
-              CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static -C linker=clang -C link-arg=-fuse-ld=${pkgs.mold}/bin/mold";
-              inherit (self.checks.${system}.pre-commit-check) shellHook;
+          craneLib.devShell {
+            RUSTC_WRAPPER = "${pkgs.sccache}/bin/sccache";
+            CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
+            inherit (self.checks.${system}.pre-commit-check) shellHook;
+            CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static -Clink-arg=-fuse-ld=lld";
+            PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
+            OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include";
+            OPENSSL_LIB_DIR = "${pkgs.lib.getLib pkgs.openssl}/lib";
 
-              nativeBuildInputs = with pkgs; [
-                sccache
-                pkg-config
-                clang
-                mold
-              ];
+            nativeBuildInputs = with pkgs; [
+              sccache
+              pkg-config
+              openssl
+              clang
+              llvmPackages.bintools
+              pkgs.gdb
+            ];
 
-              buildInputs = [
-                (rustVersion.override {
-                  extensions = ["rust-src" "rust-analyzer" "rustc" "cargo" "clippy"];
-                })
-                self.checks.${system}.pre-commit-check.enabledPackages
-              ];
+            buildInputs = [
+              (rustVersion.override {
+                extensions = ["rust-src" "rust-analyzer" "rustc" "cargo" "clippy"];
+              })
+              self.checks.${system}.pre-commit-check.enabledPackages
+              pkgs.openssl
+              pkgs.llvmPackages.bintools
 
-              packages = with pkgs; [
-                clang
-                git-cliff
-                nodejs
-                nodePackages.pnpm
-                mold
-                upx
-                coreutils
-                rust-analyzer
-                skopeo
-                watchexec
-                systemfd
-                bacon
-                openssl
-                cargo-audit
-                cargo-machete
-              ];
-            }
+              pkgs.gdb
+            ];
+
+            packages = with pkgs; [
+              clang
+              git-cliff
+              nodejs
+              nodePackages.pnpm
+              upx
+              coreutils
+              rust-analyzer
+              skopeo
+              watchexec
+              systemfd
+              bacon
+              openssl
+              cargo-audit
+              cargo-machete
+            ];
+          }
         );
       }
     );
