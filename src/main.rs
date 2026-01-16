@@ -55,30 +55,26 @@ async fn check_uniqueness(file_to_add: PathBuf) -> eyre::Result<()> {
     let xdg_dirs = xdg::BaseDirectories::with_prefix("glypho");
     let pid_file = xdg_dirs.find_runtime_file("running.pid");
 
-    match pid_file {
+    if let Some(pidfile) = pid_file {
         //do client mode
-        Some(pid_file) => {
-            let file = tokio::fs::read_to_string(pid_file).await?;
-            let ps: ProcessStatus = toml::from_str(file.as_str())?;
-            let pid = ps.pid;
-            let process_dir = format!("/proc/{pid}");
+        let file = tokio::fs::read_to_string(pidfile).await?;
+        let ps: ProcessStatus = toml::from_str(file.as_str())?;
+        let pid = ps.pid;
+        let process_dir = format!("/proc/{pid}");
 
-            if std::fs::exists(PathBuf::from(process_dir))? {
-                let port = ps.port;
-                let client = reqwest::Client::new();
-                let _res = client
-                    .post(format!("http://localhost:{port}/add"))
-                    .json(&AddFileRequest {
-                        file: file_to_add.clone(),
-                    })
-                    .send()
-                    .await?;
-                exit(0)
-            }
+        if std::fs::exists(PathBuf::from(process_dir))? {
+            let port = ps.port;
+            let client = reqwest::Client::new();
+            let _res = client
+                .post(format!("http://localhost:{port}/add"))
+                .json(&AddFileRequest {
+                    file: file_to_add.clone(),
+                })
+                .send()
+                .await?;
+            exit(0)
         }
-        //create file and start server
-        None => (),
-    }
+    };
 
     Ok(())
 }
@@ -120,7 +116,7 @@ async fn main() -> eyre::Result<()> {
         None => return Err(GlyphoError::NotProvided.into()),
     };
 
-    let _ = check_uniqueness(file.clone()).await?;
+    check_uniqueness(file.clone()).await?;
     info!("Starting Glypho...");
 
     let shared_state = Arc::new(Mutex::new(InnerState::new(file.clone())));
