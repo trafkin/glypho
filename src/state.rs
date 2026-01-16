@@ -65,7 +65,7 @@ pub async fn debounce_watch<P: AsRef<Path>>(
     let (tx, rx) = tokio::sync::mpsc::channel(100);
 
     let mut debouncer =
-        AsyncDebouncer::new(Duration::from_secs(10), Some(Duration::from_secs(9)), tx).await?;
+        AsyncDebouncer::new(Duration::from_secs(5), Some(Duration::from_secs(4)), tx).await?;
 
     // Add the paths to the watcher
     debouncer
