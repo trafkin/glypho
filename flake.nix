@@ -76,6 +76,7 @@
           commonArgs
           // {
             inherit cargoArtifacts;
+            doCheck = false;
             pname = "glypho";
             postInstall = ''
               ${pkgs.upx}/bin/upx $out/bin/${glypho.pname}
@@ -181,6 +182,7 @@
               cargo-audit
               cargo-machete
               cargo-nextest
+              cargo-insta
             ];
           }
         );
