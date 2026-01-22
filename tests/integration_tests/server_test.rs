@@ -15,11 +15,7 @@ use tempfile::TempDir;
 use tokio::sync::{Mutex, broadcast};
 use tower::ServiceExt;
 
-// Include common test utilities
-mod common {
-    include!("../common/mod.rs");
-}
-
+use super::common;
 use common::fixtures;
 
 // ==================== Test App Setup ====================

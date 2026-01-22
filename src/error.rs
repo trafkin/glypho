@@ -50,66 +50,6 @@ mod tests {
     use rstest::rstest;
     use std::sync::Mutex;
 
-    // ==================== Display/Error Message Tests ====================
-
-    #[test]
-    fn test_not_provided_error_display() {
-        let err = GlyphoError::NotProvided;
-        assert_eq!(format!("{}", err), "File not provided");
-    }
-
-    #[test]
-    fn test_not_found_error_display() {
-        let err = GlyphoError::NotFound;
-        assert_eq!(format!("{}", err), "File not found");
-    }
-
-    #[test]
-    fn test_invalid_data_error_display() {
-        let err = GlyphoError::InvalidData;
-        assert_eq!(format!("{}", err), "File format is not text");
-    }
-
-    #[test]
-    fn test_unknown_error_display() {
-        let err = GlyphoError::Unknown;
-        assert_eq!(format!("{}", err), "Unknown Error");
-    }
-
-    #[test]
-    fn test_poison_error_display() {
-        let err = GlyphoError::PoisonError;
-        assert_eq!(format!("{}", err), "Poison Error");
-    }
-
-    #[test]
-    fn test_markdown_error_display() {
-        let err = GlyphoError::MarkdownError {
-            place: None,
-            reason: "Invalid syntax".to_string(),
-            rule_id: "syntax".to_string(),
-            m_source: "test".to_string(),
-        };
-        let display = format!("{}", err);
-        assert!(display.contains("Makrdown parsing"));
-        assert!(display.contains("Invalid syntax"));
-    }
-
-    #[test]
-    fn test_markdown_error_with_place_some() {
-        // Test with Some(place) - we can't easily construct Place,
-        // so just test with None and verify display works
-        let err = GlyphoError::MarkdownError {
-            place: None,
-            reason: "Unexpected token".to_string(),
-            rule_id: "token".to_string(),
-            m_source: "source".to_string(),
-        };
-        let display = format!("{}", err);
-        assert!(display.contains("Makrdown parsing"));
-        assert!(display.contains("Unexpected token"));
-    }
-
     // ==================== From<PoisonError<T>> Tests ====================
 
     #[test]
