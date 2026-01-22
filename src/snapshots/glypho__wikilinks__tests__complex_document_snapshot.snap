@@ -1,0 +1,26 @@
+---
+source: src/wikilinks.rs
+assertion_line: 190
+expression: wikilinks_to_markdown(input)
+---
+# My Document
+
+This is a document with various [WikiLinks](WikiLinks).
+
+## Section 1
+
+See [First Page](Page1) and [Page2](Page2) for more information.
+
+### Subsection
+
+- Item with [Item1](Item1)
+- Another [Custom Label](Item2)
+
+## Code Block (should not affect wikilinks outside)
+
+```rust
+// This is code
+let x = 1;
+```
+
+Back to [Normal](Normal) text with [Links](Multiple) in [Line](One).

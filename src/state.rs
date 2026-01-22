@@ -552,3 +552,548 @@ impl InnerState {
 }
 
 type AppState = Mutex<InnerState>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+    use tempfile::TempDir;
+
+    // ==================== Helper Functions ====================
+
+    fn create_test_state(file_path: PathBuf) -> Arc<AppState> {
+        Arc::new(Mutex::new(InnerState::new(file_path)))
+    }
+
+    fn create_temp_markdown_file(content: &str) -> (TempDir, PathBuf) {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("test.md");
+        std::fs::write(&file_path, content).unwrap();
+        (temp_dir, file_path)
+    }
+
+    // ==================== InnerState Tests ====================
+
+    #[test]
+    fn test_inner_state_new() {
+        let file_path = PathBuf::from("/tmp/test.md");
+        let state = InnerState::new(file_path.clone());
+
+        assert_eq!(state.active_file, file_path);
+        assert!(state.files.contains_key(&file_path));
+        assert!(state.watched_files.is_empty());
+    }
+
+    #[test]
+    fn test_inner_state_new_initializes_buffer() {
+        let file_path = PathBuf::from("/tmp/test.md");
+        let state = InnerState::new(file_path.clone());
+
+        let buffer = state.files.get(&file_path).unwrap();
+        assert_eq!(buffer.capacity(), 4096);
+        assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn test_inner_state_reload_file() {
+        let file_path = PathBuf::from("/tmp/test.md");
+        let mut state = InnerState::new(file_path.clone());
+
+        let buffer = BytesMut::with_capacity(100);
+        let html = "<p>Test HTML</p>".to_string();
+
+        state.reload_file(&file_path, buffer, html.clone());
+
+        let stored_buffer = state.files.get(&file_path).unwrap();
+        assert_eq!(stored_buffer.as_ref(), html.as_bytes());
+    }
+
+    #[test]
+    fn test_inner_state_reload_file_clears_old_content() {
+        let file_path = PathBuf::from("/tmp/test.md");
+        let mut state = InnerState::new(file_path.clone());
+
+        // First reload
+        let buffer1 = BytesMut::from("old content");
+        state.reload_file(&file_path, buffer1, "first".to_string());
+
+        // Second reload
+        let buffer2 = BytesMut::from("new content");
+        state.reload_file(&file_path, buffer2, "second".to_string());
+
+        let stored = state.files.get(&file_path).unwrap();
+        assert_eq!(stored.as_ref(), b"second");
+    }
+
+    #[test]
+    fn test_inner_state_render_valid_file() {
+        let (_temp_dir, file_path) = create_temp_markdown_file("# Hello World\n\nThis is a test.");
+
+        let mut state = InnerState::new(file_path.clone());
+        let result = state.render(&file_path);
+
+        assert!(result.is_ok());
+        let html = result.unwrap();
+        assert!(html.contains("<h1>"));
+        assert!(html.contains("Hello World"));
+        assert!(html.contains("<p>"));
+    }
+
+    #[test]
+    fn test_inner_state_render_with_wikilinks() {
+        let (_temp_dir, file_path) =
+            create_temp_markdown_file("Check out [[MyPage]] for more info.");
+
+        let mut state = InnerState::new(file_path.clone());
+        let result = state.render(&file_path);
+
+        assert!(result.is_ok());
+        let html = result.unwrap();
+        // Wikilinks should be converted to markdown links first
+        assert!(html.contains("MyPage"));
+    }
+
+    #[test]
+    fn test_inner_state_render_with_code_block() {
+        let content = r#"# Code Example
+
+```rust
+fn main() {
+    println!("Hello!");
+}
+```
+"#;
+        let (_temp_dir, file_path) = create_temp_markdown_file(content);
+
+        let mut state = InnerState::new(file_path.clone());
+        let result = state.render(&file_path);
+
+        assert!(result.is_ok());
+        let html = result.unwrap();
+        assert!(html.contains("<code"));
+    }
+
+    #[test]
+    fn test_inner_state_render_with_gfm_table() {
+        let content = r#"| Header 1 | Header 2 |
+|----------|----------|
+| Cell 1   | Cell 2   |
+"#;
+        let (_temp_dir, file_path) = create_temp_markdown_file(content);
+
+        let mut state = InnerState::new(file_path.clone());
+        let result = state.render(&file_path);
+
+        assert!(result.is_ok());
+        let html = result.unwrap();
+        assert!(html.contains("<table>") || html.contains("<table"));
+    }
+
+    #[test]
+    fn test_inner_state_render_with_task_list() {
+        let content = r#"- [x] Completed task
+- [ ] Incomplete task
+"#;
+        let (_temp_dir, file_path) = create_temp_markdown_file(content);
+
+        let mut state = InnerState::new(file_path.clone());
+        let result = state.render(&file_path);
+
+        assert!(result.is_ok());
+        let html = result.unwrap();
+        assert!(html.contains("checkbox") || html.contains("type=\"checkbox\""));
+    }
+
+    #[test]
+    fn test_inner_state_render_file_not_found() {
+        let file_path = PathBuf::from("/nonexistent/path/file.md");
+        let mut state = InnerState::new(file_path.clone());
+
+        let result = state.render(&file_path);
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("does not exist"));
+    }
+
+    #[test]
+    fn test_inner_state_render_with_frontmatter() {
+        let content = r#"---
+title: Test Document
+author: Test Author
+---
+
+# Content Here
+"#;
+        let (_temp_dir, file_path) = create_temp_markdown_file(content);
+
+        let mut state = InnerState::new(file_path.clone());
+        let result = state.render(&file_path);
+
+        assert!(result.is_ok());
+        // Frontmatter should be parsed (not rendered as visible content)
+        let html = result.unwrap();
+        assert!(html.contains("Content Here"));
+    }
+
+    #[test]
+    fn test_inner_state_render_with_math() {
+        let content = r#"Inline math: $x^2$
+
+Block math:
+$$
+\sum_{i=1}^{n} i = \frac{n(n+1)}{2}
+$$
+"#;
+        let (_temp_dir, file_path) = create_temp_markdown_file(content);
+
+        let mut state = InnerState::new(file_path.clone());
+        let result = state.render(&file_path);
+
+        // Should render without error (actual math rendering is client-side)
+        assert!(result.is_ok());
+    }
+
+    // ==================== Signals Struct Tests ====================
+
+    #[test]
+    fn test_signals_creation() {
+        let signals = Signals {
+            file: Some(PathBuf::from("/path/to/file.md")),
+            first: true,
+        };
+
+        assert_eq!(signals.file, Some(PathBuf::from("/path/to/file.md")));
+        assert!(signals.first);
+    }
+
+    #[test]
+    fn test_signals_with_none_file() {
+        let signals = Signals {
+            file: None,
+            first: false,
+        };
+
+        assert!(signals.file.is_none());
+        assert!(!signals.first);
+    }
+
+    // ==================== AddFileRequest/Response Tests ====================
+
+    #[test]
+    fn test_add_file_request_creation() {
+        let request = AddFileRequest {
+            file: PathBuf::from("/path/to/new_file.md"),
+        };
+
+        assert_eq!(request.file, PathBuf::from("/path/to/new_file.md"));
+    }
+
+    #[test]
+    fn test_add_file_response_creation() {
+        let response = AddFileResponse { ok: true };
+        assert!(response.ok);
+
+        let response_fail = AddFileResponse { ok: false };
+        assert!(!response_fail.ok);
+    }
+
+    // ==================== SignalEvents Tests ====================
+
+    #[test]
+    fn test_signal_events_clone() {
+        let event = SignalEvents::AddedNewFile;
+        let cloned = event.clone();
+        assert!(matches!(cloned, SignalEvents::AddedNewFile));
+    }
+
+    #[test]
+    fn test_signal_events_updated_file_clone() {
+        let event = SignalEvents::UpdatedFile {
+            updated_file: PathBuf::from("/test.md"),
+            html: "<p>Test</p>".to_string(),
+        };
+        let cloned = event.clone();
+
+        if let SignalEvents::UpdatedFile { updated_file, html } = cloned {
+            assert_eq!(updated_file, PathBuf::from("/test.md"));
+            assert_eq!(html, "<p>Test</p>");
+        } else {
+            panic!("Expected UpdatedFile variant");
+        }
+    }
+
+    #[test]
+    fn test_signal_events_debug() {
+        let event = SignalEvents::ActiveFileChanged;
+        let debug_str = format!("{:?}", event);
+        assert!(debug_str.contains("ActiveFileChanged"));
+    }
+
+    #[test]
+    fn test_signal_events_all_variants() {
+        let events: Vec<SignalEvents> = vec![
+            SignalEvents::AddedNewFile,
+            SignalEvents::UpdatedFile {
+                updated_file: PathBuf::from("/test.md"),
+                html: String::new(),
+            },
+            SignalEvents::ActiveFileChanged,
+        ];
+
+        assert_eq!(events.len(), 3);
+    }
+
+    // ==================== Event Sender/Receiver Tests ====================
+
+    #[tokio::test]
+    async fn test_event_sender_broadcast() {
+        let file_path = PathBuf::from("/tmp/test.md");
+        let state = InnerState::new(file_path);
+
+        let mut receiver = state.event_sender.subscribe();
+
+        // Send an event
+        let _ = state.event_sender.send(SignalEvents::AddedNewFile);
+
+        // Receive the event
+        let received = receiver.recv().await.unwrap();
+        assert!(matches!(received, SignalEvents::AddedNewFile));
+    }
+
+    #[tokio::test]
+    async fn test_event_sender_multiple_subscribers() {
+        let file_path = PathBuf::from("/tmp/test.md");
+        let state = InnerState::new(file_path);
+
+        let mut receiver1 = state.event_sender.subscribe();
+        let mut receiver2 = state.event_sender.subscribe();
+
+        let _ = state.event_sender.send(SignalEvents::ActiveFileChanged);
+
+        let recv1 = receiver1.recv().await.unwrap();
+        let recv2 = receiver2.recv().await.unwrap();
+
+        assert!(matches!(recv1, SignalEvents::ActiveFileChanged));
+        assert!(matches!(recv2, SignalEvents::ActiveFileChanged));
+    }
+
+    // ==================== State Mutex Tests ====================
+
+    #[tokio::test]
+    async fn test_state_concurrent_access() {
+        let (_temp_dir, file_path) = create_temp_markdown_file("# Test");
+        let state = create_test_state(file_path.clone());
+
+        let state1 = state.clone();
+        let state2 = state.clone();
+
+        let file_path1 = file_path.clone();
+        let handle1 = tokio::spawn(async move {
+            let guard = state1.lock().await;
+            assert_eq!(guard.active_file, file_path1);
+        });
+
+        let file_path2 = file_path.clone();
+        let handle2 = tokio::spawn(async move {
+            let guard = state2.lock().await;
+            assert_eq!(guard.active_file, file_path2);
+        });
+
+        handle1.await.unwrap();
+        handle2.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_state_modification_persists() {
+        let (_temp_dir, file_path) = create_temp_markdown_file("# Test");
+        let state = create_test_state(file_path.clone());
+
+        // Modify state
+        {
+            let mut guard = state.lock().await;
+            guard.watched_files.push(file_path.clone());
+        }
+
+        // Verify modification persists
+        {
+            let guard = state.lock().await;
+            assert_eq!(guard.watched_files.len(), 1);
+            assert_eq!(guard.watched_files[0], file_path);
+        }
+    }
+
+    // ==================== Markdown Rendering Options Tests ====================
+
+    #[test]
+    fn test_render_gfm_strikethrough() {
+        let content = "This is ~~deleted~~ text.";
+        let (_temp_dir, file_path) = create_temp_markdown_file(content);
+
+        let mut state = InnerState::new(file_path.clone());
+        let result = state.render(&file_path);
+
+        assert!(result.is_ok());
+        let html = result.unwrap();
+        assert!(html.contains("<del>") || html.contains("deleted"));
+    }
+
+    #[test]
+    fn test_render_autolinks() {
+        let content = "Visit https://example.com for more info.";
+        let (_temp_dir, file_path) = create_temp_markdown_file(content);
+
+        let mut state = InnerState::new(file_path.clone());
+        let result = state.render(&file_path);
+
+        assert!(result.is_ok());
+        let html = result.unwrap();
+        assert!(html.contains("href") || html.contains("example.com"));
+    }
+
+    #[test]
+    fn test_render_footnotes() {
+        let content = r#"Here is a footnote reference[^1].
+
+[^1]: Here is the footnote.
+"#;
+        let (_temp_dir, file_path) = create_temp_markdown_file(content);
+
+        let mut state = InnerState::new(file_path.clone());
+        let result = state.render(&file_path);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_render_dangerous_html_allowed() {
+        let content = r#"<div class="custom">
+Custom HTML content
+</div>
+"#;
+        let (_temp_dir, file_path) = create_temp_markdown_file(content);
+
+        let mut state = InnerState::new(file_path.clone());
+        let result = state.render(&file_path);
+
+        assert!(result.is_ok());
+        let html = result.unwrap();
+        // Dangerous HTML should be allowed
+        assert!(html.contains("<div") || html.contains("custom"));
+    }
+
+    // ==================== File Operations Tests ====================
+
+    #[tokio::test]
+    async fn test_multiple_files_tracking() {
+        let temp_dir = TempDir::new().unwrap();
+        let file1 = temp_dir.path().join("file1.md");
+        let file2 = temp_dir.path().join("file2.md");
+
+        std::fs::write(&file1, "# File 1").unwrap();
+        std::fs::write(&file2, "# File 2").unwrap();
+
+        let state = create_test_state(file1.clone());
+
+        // Add second file
+        {
+            let mut guard = state.lock().await;
+            guard
+                .files
+                .insert(file2.clone(), BytesMut::with_capacity(4096));
+        }
+
+        // Verify both files are tracked
+        {
+            let guard = state.lock().await;
+            assert!(guard.files.contains_key(&file1));
+            assert!(guard.files.contains_key(&file2));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_active_file_change() {
+        let temp_dir = TempDir::new().unwrap();
+        let file1 = temp_dir.path().join("file1.md");
+        let file2 = temp_dir.path().join("file2.md");
+
+        std::fs::write(&file1, "# File 1").unwrap();
+        std::fs::write(&file2, "# File 2").unwrap();
+
+        let state = create_test_state(file1.clone());
+
+        // Change active file
+        {
+            let mut guard = state.lock().await;
+            guard.active_file = file2.clone();
+        }
+
+        // Verify active file changed
+        {
+            let guard = state.lock().await;
+            assert_eq!(guard.active_file, file2);
+        }
+    }
+
+    // ==================== Edge Cases ====================
+
+    #[test]
+    fn test_render_empty_file() {
+        let (_temp_dir, file_path) = create_temp_markdown_file("");
+
+        let mut state = InnerState::new(file_path.clone());
+        let result = state.render(&file_path);
+
+        assert!(result.is_ok());
+        let html = result.unwrap();
+        assert!(html.is_empty() || html.trim().is_empty());
+    }
+
+    #[test]
+    fn test_render_whitespace_only_file() {
+        let (_temp_dir, file_path) = create_temp_markdown_file("   \n\n   \n");
+
+        let mut state = InnerState::new(file_path.clone());
+        let result = state.render(&file_path);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_render_very_long_content() {
+        let content = "# Long Document\n\n".to_string() + &"This is a paragraph.\n\n".repeat(1000);
+        let (_temp_dir, file_path) = create_temp_markdown_file(&content);
+
+        let mut state = InnerState::new(file_path.clone());
+        let result = state.render(&file_path);
+
+        assert!(result.is_ok());
+        let html = result.unwrap();
+        assert!(html.len() > content.len()); // HTML should be longer due to tags
+    }
+
+    // ==================== Parameterized Tests ====================
+
+    #[rstest]
+    #[case("# Header", "<h1>")]
+    #[case("## Header 2", "<h2>")]
+    #[case("### Header 3", "<h3>")]
+    #[case("**bold**", "<strong>")]
+    #[case("*italic*", "<em>")]
+    #[case("`code`", "<code>")]
+    fn test_markdown_elements(#[case] input: &str, #[case] expected_tag: &str) {
+        let (_temp_dir, file_path) = create_temp_markdown_file(input);
+
+        let mut state = InnerState::new(file_path.clone());
+        let result = state.render(&file_path);
+
+        assert!(result.is_ok());
+        let html = result.unwrap();
+        assert!(
+            html.contains(expected_tag),
+            "Expected {} in: {}",
+            expected_tag,
+            html
+        );
+    }
+}

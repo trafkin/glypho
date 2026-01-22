@@ -9,7 +9,7 @@ pub enum GlyphoError {
     NotProvided,
     #[error("File not found")]
     NotFound,
-    #[error("Makrdown parsing{place:?}, {reason:?}, {rule_id:?}, {m_source:?}")]
+    #[error("Markdown parsing{place:?}, {reason:?}, {rule_id:?}, {m_source:?}")]
     MarkdownError {
         place: Option<Box<Place>>,
         reason: String,
@@ -41,5 +41,196 @@ impl From<std::io::ErrorKind> for GlyphoError {
             std::io::ErrorKind::InvalidData => Self::InvalidData,
             _ => GlyphoError::Unknown,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+    use std::sync::Mutex;
+
+    // ==================== Display/Error Message Tests ====================
+
+    #[test]
+    fn test_not_provided_error_display() {
+        let err = GlyphoError::NotProvided;
+        assert_eq!(format!("{}", err), "File not provided");
+    }
+
+    #[test]
+    fn test_not_found_error_display() {
+        let err = GlyphoError::NotFound;
+        assert_eq!(format!("{}", err), "File not found");
+    }
+
+    #[test]
+    fn test_invalid_data_error_display() {
+        let err = GlyphoError::InvalidData;
+        assert_eq!(format!("{}", err), "File format is not text");
+    }
+
+    #[test]
+    fn test_unknown_error_display() {
+        let err = GlyphoError::Unknown;
+        assert_eq!(format!("{}", err), "Unknown Error");
+    }
+
+    #[test]
+    fn test_poison_error_display() {
+        let err = GlyphoError::PoisonError;
+        assert_eq!(format!("{}", err), "Poison Error");
+    }
+
+    #[test]
+    fn test_markdown_error_display() {
+        let err = GlyphoError::MarkdownError {
+            place: None,
+            reason: "Invalid syntax".to_string(),
+            rule_id: "syntax".to_string(),
+            m_source: "test".to_string(),
+        };
+        let display = format!("{}", err);
+        assert!(display.contains("Makrdown parsing"));
+        assert!(display.contains("Invalid syntax"));
+    }
+
+    #[test]
+    fn test_markdown_error_with_place_some() {
+        // Test with Some(place) - we can't easily construct Place,
+        // so just test with None and verify display works
+        let err = GlyphoError::MarkdownError {
+            place: None,
+            reason: "Unexpected token".to_string(),
+            rule_id: "token".to_string(),
+            m_source: "source".to_string(),
+        };
+        let display = format!("{}", err);
+        assert!(display.contains("Makrdown parsing"));
+        assert!(display.contains("Unexpected token"));
+    }
+
+    // ==================== From<PoisonError<T>> Tests ====================
+
+    #[test]
+    fn test_from_poison_error() {
+        // Create a poisoned mutex by panicking inside a lock
+        let mutex = Mutex::new(42);
+        let poison_result = std::panic::catch_unwind(|| {
+            let _guard = mutex.lock().unwrap();
+            panic!("Intentional panic to poison the mutex");
+        });
+        assert!(poison_result.is_err());
+
+        // Now the mutex is poisoned
+        let lock_result = mutex.lock();
+        assert!(lock_result.is_err());
+
+        if let Err(poison_err) = lock_result {
+            let glypho_err: GlyphoError = poison_err.into();
+            assert!(matches!(glypho_err, GlyphoError::PoisonError));
+        }
+    }
+
+    // ==================== From<std::io::ErrorKind> Tests ====================
+
+    #[rstest]
+    #[case(std::io::ErrorKind::NotFound, GlyphoError::NotFound)]
+    #[case(std::io::ErrorKind::Other, GlyphoError::Unknown)]
+    #[case(std::io::ErrorKind::InvalidData, GlyphoError::InvalidData)]
+    fn test_from_io_error_kind_mapped(
+        #[case] io_kind: std::io::ErrorKind,
+        #[case] expected: GlyphoError,
+    ) {
+        let result: GlyphoError = io_kind.into();
+        assert_eq!(
+            std::mem::discriminant(&result),
+            std::mem::discriminant(&expected)
+        );
+    }
+
+    #[rstest]
+    #[case(std::io::ErrorKind::PermissionDenied)]
+    #[case(std::io::ErrorKind::ConnectionRefused)]
+    #[case(std::io::ErrorKind::ConnectionReset)]
+    #[case(std::io::ErrorKind::ConnectionAborted)]
+    #[case(std::io::ErrorKind::NotConnected)]
+    #[case(std::io::ErrorKind::AddrInUse)]
+    #[case(std::io::ErrorKind::AddrNotAvailable)]
+    #[case(std::io::ErrorKind::BrokenPipe)]
+    #[case(std::io::ErrorKind::AlreadyExists)]
+    #[case(std::io::ErrorKind::WouldBlock)]
+    #[case(std::io::ErrorKind::InvalidInput)]
+    #[case(std::io::ErrorKind::TimedOut)]
+    #[case(std::io::ErrorKind::WriteZero)]
+    #[case(std::io::ErrorKind::Interrupted)]
+    #[case(std::io::ErrorKind::Unsupported)]
+    #[case(std::io::ErrorKind::UnexpectedEof)]
+    #[case(std::io::ErrorKind::OutOfMemory)]
+    fn test_from_io_error_kind_unknown(#[case] io_kind: std::io::ErrorKind) {
+        let result: GlyphoError = io_kind.into();
+        assert!(matches!(result, GlyphoError::Unknown));
+    }
+
+    // ==================== Debug Trait Tests ====================
+
+    #[test]
+    fn test_error_debug() {
+        let err = GlyphoError::NotFound;
+        let debug_str = format!("{:?}", err);
+        assert!(debug_str.contains("NotFound"));
+    }
+
+    #[test]
+    fn test_markdown_error_debug() {
+        let err = GlyphoError::MarkdownError {
+            place: None,
+            reason: "test".to_string(),
+            rule_id: "rule".to_string(),
+            m_source: "src".to_string(),
+        };
+        let debug_str = format!("{:?}", err);
+        assert!(debug_str.contains("MarkdownError"));
+        assert!(debug_str.contains("test"));
+    }
+
+    // ==================== Error Trait Tests ====================
+
+    #[test]
+    fn test_error_is_std_error() {
+        fn assert_std_error<E: std::error::Error>(_: &E) {}
+
+        let err = GlyphoError::NotFound;
+        assert_std_error(&err);
+    }
+
+    #[test]
+    fn test_eyre_report_conversion() {
+        let eyre_err = eyre::eyre!("Test error");
+        let glypho_err: GlyphoError = eyre_err.into();
+        assert!(matches!(glypho_err, GlyphoError::ErrReport(_)));
+    }
+
+    // ==================== Variant Coverage Tests ====================
+
+    #[test]
+    fn test_all_variants_exist() {
+        // This test ensures all variants can be constructed
+        let variants: Vec<GlyphoError> = vec![
+            GlyphoError::NotProvided,
+            GlyphoError::NotFound,
+            GlyphoError::MarkdownError {
+                place: None,
+                reason: String::new(),
+                rule_id: String::new(),
+                m_source: String::new(),
+            },
+            GlyphoError::InvalidData,
+            GlyphoError::Unknown,
+            GlyphoError::PoisonError,
+            GlyphoError::ErrReport(eyre::eyre!("test")),
+        ];
+
+        assert_eq!(variants.len(), 7);
     }
 }

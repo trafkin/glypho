@@ -1,0 +1,13 @@
+---
+source: src/wikilinks.rs
+assertion_line: 204
+expression: wikilinks_to_markdown(input)
+---
+[A](A)
+[C](B)
+[path/to/file.md](path/to/file.md)
+[File Link](path/to/file.md)
+[Page With Spaces](Page With Spaces)
+[Page-With-Dashes](Page-With-Dashes)
+[Page_With_Underscores](Page_With_Underscores)
+[123NumericStart](123NumericStart)

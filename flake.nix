@@ -84,7 +84,7 @@
         );
 
         deb-package = pkgs.stdenv.mkDerivation {
-          name = "my-rust-app-deb";
+          name = "glypho";
           src = ./.;
 
           nativeBuildInputs = [pkgs.dpkg];
@@ -180,6 +180,7 @@
               openssl
               cargo-audit
               cargo-machete
+              cargo-nextest
             ];
           }
         );
