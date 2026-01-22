@@ -241,14 +241,14 @@ pub async fn event_handler(
                 yielder.yield_item(Ok(sse_event)).await;
 
                 let patch = PatchElements::new(html)
-                    .selector("article#markdown")
+                    .selector("content-renderer#markdown")
                     .mode(ElementPatchMode::Inner);
 
                 let sse_event = patch.write_as_axum_sse_event();
                 yielder.yield_item(Ok(sse_event)).await;
 
                 let script = ExecuteScript::new(
-                    "Prism.highlightAllUnder(document.querySelector('article#markdown'));MathJax.typeset();",
+                    "Prism.highlightAllUnder(document.querySelector('content-renderer#markdown'));MathJax.typeset();",
                 );
                 let sse_event = script.write_as_axum_sse_event();
                 yielder.yield_item(Ok(sse_event)).await;
@@ -316,13 +316,13 @@ pub async fn event_handler(
                         let active = { local_state.lock().await.active_file.clone() };
                         if active == updated_file {
                             let patch = PatchElements::new(html)
-                                .selector("article#markdown")
+                                .selector("content-renderer#markdown")
                                 .mode(ElementPatchMode::Inner);
                             let sse_event = patch.write_as_axum_sse_event();
                             yielder.yield_item(Ok(sse_event)).await;
 
                             let script = ExecuteScript::new(
-                                "Prism.highlightAllUnder(document.querySelector('article#markdown'));MathJax.typeset();",
+                                "Prism.highlightAllUnder(document.querySelector('content-renderer#markdown'));MathJax.typeset();",
                             );
                             let sse_event = script.write_as_axum_sse_event();
                             yielder.yield_item(Ok(sse_event)).await;
@@ -365,19 +365,19 @@ pub async fn event_handler(
                         };
 
                         let patch = PatchElements::new(html)
-                            .selector("article#markdown")
+                            .selector("content-renderer#markdown")
                             .mode(ElementPatchMode::Inner);
                         let sse_event = patch.write_as_axum_sse_event();
                         yielder.yield_item(Ok(sse_event)).await;
 
                         let script = ExecuteScript::new(
-                            "Prism.highlightAllUnder(document.querySelector('article#markdown'));MathJax.typeset();",
+                            "Prism.highlightAllUnder(document.querySelector('content-renderer#markdown'));MathJax.typeset();",
                         );
                         let sse_event = script.write_as_axum_sse_event();
                         yielder.yield_item(Ok(sse_event)).await;
 
                         let script = ExecuteScript::new(
-                            "Prism.highlightAllUnder(document.querySelector('article#markdown'));MathJax.typeset();",
+                            "Prism.highlightAllUnder(document.querySelector('content-renderer#markdown'));MathJax.typeset();",
                         );
                         let sse_event = script.write_as_axum_sse_event();
                         yielder.yield_item(Ok(sse_event)).await;
