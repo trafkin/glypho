@@ -2,6 +2,7 @@ use clap::Parser;
 use clap_stdin::FileOrStdin;
 
 #[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
 pub struct Args {
     #[arg(default_value = "-")]
     pub input: Option<FileOrStdin>,
