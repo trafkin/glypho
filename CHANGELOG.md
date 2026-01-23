@@ -2,11 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
-## 0.2.0 - 2026-01-16
+## 0.2.0 - 2026-01-23
 
 ### Bug Fixes
 
 - Removing noise logs, and adding a pid check logic
+- Lock file
+- First try to make content renderer a custom web component
 
 ### Documentation
 
@@ -29,6 +31,9 @@ All notable changes to this project will be documented in this file.
 - Clippy fixes
 - Html fixes
 - Html fixes
+- Removing unnecesary tests
+- DoCheck false
+- Adding version and about
 
 ### Other (unconventional)
 
@@ -37,14 +42,17 @@ All notable changes to this project will be documented in this file.
 - Merge pull request #20 from trafkin/develop
 - Lazy tree fix
 - Update
+- 0.2.0
+- 0.2.0
+- Adding tests
 
 ### Commit Statistics
 
-- 19 commit(s) contributed to the release.
-- 144 day(s) passed between the first and last commit.
-- 15 commit(s) parsed as conventional.
+- 27 commit(s) contributed to the release.
+- 151 day(s) passed between the first and last commit.
+- 21 commit(s) parsed as conventional.
 - 0 linked issue(s) detected in commits.
-- 147 day(s) passed between releases.
+- 154 day(s) passed between releases.
 
 ## 0.1.0 - 2025-08-22
 
