@@ -2,6 +2,13 @@
 name = "glypho"
 version = "0.2.0"
 edition = "2024"
+description = "A fast, minimal CLI tool to render Markdown files via a local web server"
+license = "Apache-2.0"
+repository = "https://github.com/trafkin/glypho"
+readme = "README.md"
+keywords = ["markdown", "cli", "viewer", "web-server"]
+categories = ["command-line-utilities"]
+exclude = [".pre-commit-config.yaml", ".direnv", "result", "flake.lock", ".flatpak-builder", "repo"]
 
 [dependencies]
 clap = { version = "4.5.40", features = ["derive"] }

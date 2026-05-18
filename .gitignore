@@ -5,3 +5,4 @@
 /.flatpak-builder
 /repo
 /.pi-lens
+.pre-commit-config.yaml
