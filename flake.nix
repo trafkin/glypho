@@ -59,7 +59,7 @@
           buildInputs = with pkgs; [
             openssl
             nodejs
-            nodePackages.pnpm
+            pnpm
           ];
           nativeBuildInputs = with pkgs; [
             clang
@@ -170,7 +170,7 @@
               clang
               git-cliff
               nodejs
-              nodePackages.pnpm
+              pnpm
               upx
               coreutils
               rust-analyzer
