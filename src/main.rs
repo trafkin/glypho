@@ -26,12 +26,12 @@ use crate::{
     state::{InnerState, event_handler, root},
 };
 
-#[cfg(target_env = "musl")]
-use mimalloc::MiMalloc;
-
-#[cfg(target_env = "musl")]
-#[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;
+// #[cfg(target_env = "musl")]
+// use mimalloc::MiMalloc;
+//
+// #[cfg(target_env = "musl")]
+// #[global_allocator]
+// static GLOBAL: MiMalloc = MiMalloc;
 
 #[derive(Serialize, Deserialize)]
 struct ProcessStatus {

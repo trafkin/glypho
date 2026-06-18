@@ -22,9 +22,8 @@
           (import rust-overlay)
         ];
 
-        rustToolchain = pkgs.rust-bin.stable.latest.default.override {
-          targets = ["x86_64-unknown-linux-musl"];
-        };
+        stdenv = pkgs.stdenvAdapters.useMoldLinker pkgs.stdenv;
+        rustToolchain = pkgs.pkgsBuildHost.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
 
         craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
 
@@ -52,17 +51,21 @@
         commonArgs = {
           inherit src;
           CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
-          CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static -Clink-arg=-fuse-ld=lld";
+          CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static -C linker=clang -C link-arg=-fuse-ld=${pkgs.mold}/bin/mold";
           PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
           OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include";
           OPENSSL_LIB_DIR = "${pkgs.lib.getLib pkgs.openssl}/lib";
           buildInputs = with pkgs; [
+            rustToolchain
+            mold
             openssl
             nodejs
             pnpm
           ];
           nativeBuildInputs = with pkgs; [
+            rustToolchain
             clang
+            mold
             upx
             pkg-config
             llvmPackages.bintools
@@ -138,31 +141,31 @@
 
         devShells.default = (
           craneLib.devShell {
-            RUSTC_WRAPPER = "${pkgs.sccache}/bin/sccache";
+            inherit (self.checks.${system}.pre-commit-check) shellHook stdenv;
             CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
-            inherit (self.checks.${system}.pre-commit-check) shellHook;
-            CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static -Clink-arg=-fuse-ld=lld";
             PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
             OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include";
             OPENSSL_LIB_DIR = "${pkgs.lib.getLib pkgs.openssl}/lib";
+            CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static -C linker=clang -C link-arg=-fuse-ld=${pkgs.mold}/bin/mold";
 
             nativeBuildInputs = with pkgs; [
+              rustToolchain
               sccache
+              mold
               pkg-config
               openssl
               clang
+              mold
               llvmPackages.bintools
-              pkgs.gdb
             ];
 
             buildInputs = [
-              (rustVersion.override {
-                extensions = ["rust-src" "rust-analyzer" "rustc" "cargo" "clippy"];
-              })
+              pkgs.mold
+              rustToolchain
               self.checks.${system}.pre-commit-check.enabledPackages
               pkgs.openssl
+              pkgs.clang
               pkgs.llvmPackages.bintools
-
               pkgs.gdb
             ];
 
