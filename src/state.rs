@@ -235,7 +235,7 @@ pub async fn event_handler(
                         format!("Something weird happened:{}", err)
                     }
                 };
-                let patch = PatchSignals::new(r#"{{"first": false}}"#);
+                let patch = PatchSignals::new(r#"{"first": false}"#);
 
                 let sse_event = patch.write_as_axum_sse_event();
                 yielder.yield_item(Ok(sse_event)).await;
@@ -328,7 +328,7 @@ pub async fn event_handler(
                             yielder.yield_item(Ok(sse_event)).await;
                         }
 
-                        let patch = PatchSignals::new(r#"{{"first": false}}"#);
+                        let patch = PatchSignals::new(r#"{"first": false}"#);
 
                         let sse_event = patch.write_as_axum_sse_event();
                         yielder.yield_item(Ok(sse_event)).await;
@@ -381,7 +381,7 @@ pub async fn event_handler(
                         );
                         let sse_event = script.write_as_axum_sse_event();
                         yielder.yield_item(Ok(sse_event)).await;
-                        let patch = PatchSignals::new(r#"{{"first": false}}"#);
+                        let patch = PatchSignals::new(r#"{"first": false}"#);
                         let sse_event = patch.write_as_axum_sse_event();
                         yielder.yield_item(Ok(sse_event)).await;
                     }
