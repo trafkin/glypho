@@ -1,64 +1,66 @@
-# Testing Markdown math support
+# Mathematical Expressions
 
 ---
 
-## Basic LaTeX Syntax in Markdown
+## Physics Equations
 
-### Equations
+### Energy and Motion
 
-Inline equation using LaTeX:
+Inline mass-energy equivalence:
 
 ```
-$\( E = mc^2 \)$
+$E = mc^2$
 ```
 
-Render as: $\( E = mc^2 \)$
+Renders as: $E = mc^2$
 
 ---
 
-### Greek Letters and Special Symbols
-
-Using LaTeX:
+### Quantum Mechanics Symbols
 
 ```
-$\( \alpha, \beta, \gamma \)$
-$\( e, i, \pi \)$
-$\( \infty, \partial, \int \)$
+$\hbar$, $\psi$, $\nabla$
+$\langle x \rangle$, $\sigma$, $\hat{H}$
 ```
 
-Render as:
+Renders as:
 
-$ \( \alpha, \beta, \gamma \)$
+$\hbar$, $\psi$, $\nabla$
 
-$ \( e, i, \pi \)$
-
-$ \( \infty, \partial, \int \)$
+$\langle x \rangle$, $\sigma$, $\hat{H}$
 
 ---
 
-### Matrices
+### Linear Algebra
 
-Using LaTeX:
+Matrix representation:
 
-
-Render as:
-
-$\begin{bmatrix}a & b\\ c & d\end{bmatrix}$ 
+$$
+A = \begin{pmatrix}
+a_{11} & a_{12} & a_{13} \\
+a_{21} & a_{22} & a_{23} \\
+a_{31} & a_{32} & a_{33}
+\end{pmatrix}
+$$
 
 ---
 
-### Fractions and Roots
+### Calculus Examples
 
-Using LaTeX:
+Fractions and integrals:
 
-```
-$\( \frac{1}{2} \)$
-$\( \sqrt{x^2 + y^2} \)$
-```
+- $\frac{d}{dx} \left( x^n \right) = nx^{n-1}$
+- $\int_{0}^{\infty} e^{-x} dx = 1$
+- $\lim_{x \to 0} \frac{\sin x}{x} = 1$
 
-Render as:
+---
 
-- $( \frac{1}{2} \)$
-- $( \sqrt{x^2 + y^2} \)$
+### Displayed Equations
+
+Schrödinger equation:
+
+$$
+i\hbar \frac{\partial}{\partial t} \Psi(\mathbf{r}, t) = \hat{H} \Psi(\mathbf{r}, t)
+$$
 
 ---
