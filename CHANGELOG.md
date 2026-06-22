@@ -2,11 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
-## 0.2.0 - 2026-01-16
+## 0.2.1 - 2026-06-22
 
 ### Bug Fixes
 
 - Removing noise logs, and adding a pid check logic
+- Lock file
 
 ### Documentation
 
@@ -22,6 +23,7 @@ All notable changes to this project will be documented in this file.
 - Adding more markdown parsing features
 - Multi file tracking and fixing clippy things
 - Add new file over cli
+- Adding favicon statically
 
 ### Miscellaneous Tasks
 
@@ -29,6 +31,11 @@ All notable changes to this project will be documented in this file.
 - Clippy fixes
 - Html fixes
 - Html fixes
+- Removing unnecesary tests
+- DoCheck false
+- Update flake
+- Update flake
+- Add crates.io metadata and Apache-2.0 license
 
 ### Other (unconventional)
 
@@ -37,14 +44,19 @@ All notable changes to this project will be documented in this file.
 - Merge pull request #20 from trafkin/develop
 - Lazy tree fix
 - Update
+- 0.2.0
+- 0.2.0
+- Adding tests
+- Add GitHub Actions workflow for FlakeHub publishing
+- Examples docs improved
 
 ### Commit Statistics
 
-- 19 commit(s) contributed to the release.
-- 144 day(s) passed between the first and last commit.
-- 15 commit(s) parsed as conventional.
+- 31 commit(s) contributed to the release.
+- 301 day(s) passed between the first and last commit.
+- 23 commit(s) parsed as conventional.
 - 0 linked issue(s) detected in commits.
-- 147 day(s) passed between releases.
+- 304 day(s) passed between releases.
 
 ## 0.1.0 - 2025-08-22
 
