@@ -29,6 +29,7 @@
 
         pkgs = import nixpkgs {inherit system overlays;};
         rustVersion = rustToolchain;
+        cargoPackage = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).package;
 
         src = let
           unfilteredRoot = ./.; # The original, unfiltered source
@@ -88,7 +89,7 @@
         );
 
         deb-package = pkgs.stdenv.mkDerivation {
-          name = "glypho";
+          name = "${cargoPackage.name}-${cargoPackage.version}-deb";
           src = ./.;
 
           nativeBuildInputs = [pkgs.dpkg];
@@ -102,20 +103,20 @@
 
             # Create control file
             cat > package/DEBIAN/control <<EOF
-            Package: glypho
-            Version: 0.1.0
+            Package: ${cargoPackage.name}
+            Version: ${cargoPackage.version}
             Section: utils
             Priority: optional
             Architecture: amd64
-            Maintainer: Your Name <your.email@example.com>
-            Description: My Rust Application
-             A simple Rust application packaged as .deb
+            Maintainer: Roberto Galaz <r.galaz11@gmail.com>
+            Description: ${cargoPackage.description}
+             ${cargoPackage.description}
             EOF
           '';
 
           installPhase = ''
             mkdir -p $out
-            dpkg-deb --build package $out/glypho_0.1.0_amd64.deb
+            dpkg-deb --build package $out/${cargoPackage.name}_${cargoPackage.version}_amd64.deb
           '';
         };
 
@@ -172,8 +173,10 @@
             packages = with pkgs; [
               clang
               git-cliff
+              gh
               nodejs
               pnpm
+              dpkg
               upx
               coreutils
               rust-analyzer

@@ -15,7 +15,13 @@ Glypho was created to make reading Markdown as frictionless as possible — espe
 
 ## Installation
 
-### Using Cargo
+### From crates.io
+
+```sh
+cargo install glypho
+```
+
+### From source
 
 1. Pull the repository and go to the root directory
 2. Run `cargo install --path .`
