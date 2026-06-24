@@ -2,12 +2,20 @@
 
 Use this checklist when publishing a new Glypho release to crates.io.
 
+For details about the GitHub Actions workflow that runs checks and publishes the crate, see [GitHub Actions crates.io Release Pipeline](./github-actions-crates-release.md).
+
 ## Prerequisites
 
 - You have a clean working tree: `git status --short`
-- You are logged in to crates.io: `cargo login`
 - You have permission to publish the `glypho` crate
 - You are releasing from the branch you want to tag, usually `main`
+- The GitHub repository has a `CRATES_IO_TOKEN` secret containing a crates.io API token
+
+For local manual publishing, you also need to be logged in to crates.io:
+
+```sh
+cargo login
+```
 
 ## 1. Choose the Version
 
@@ -101,22 +109,7 @@ git commit -m "chore: release v0.3.0"
 
 Add any other release-related files to the commit if they changed.
 
-## 6. Publish to crates.io
-
-Publish the crate:
-
-```sh
-cargo publish
-```
-
-Wait for crates.io to finish indexing, then verify the install works:
-
-```sh
-cargo install glypho --version 0.3.0
-glypho --version
-```
-
-## 7. Tag and Push
+## 6. Tag and Push
 
 Create and push the release tag:
 
@@ -127,6 +120,39 @@ git push origin v0.3.0
 ```
 
 If you release from a branch other than `main`, push that branch instead.
+
+Pushing a `v*` tag starts the `Publish crate to crates.io` GitHub Actions workflow. The workflow:
+
+- Installs Rust and Node dependencies
+- Rebuilds the frontend template
+- Confirms `src/template.html` is already committed
+- Confirms the tag version matches `Cargo.toml`
+- Runs format, Clippy, tests, release build, and `cargo publish --dry-run`
+- Publishes the crate with the `CRATES_IO_TOKEN` secret
+
+Pushing a commit to `main` that changes the `Cargo.toml` package version also starts the workflow, but only as release checks. It will not publish to crates.io until you push a `v*` tag or run the workflow manually with `publish=true`.
+
+You can also run the workflow manually from GitHub Actions with `publish=false` to perform release checks without publishing.
+
+## 7. Verify the crates.io Release
+
+Wait for crates.io to finish indexing, then verify the install works:
+
+```sh
+cargo install glypho --version 0.3.0
+glypho --version
+```
+
+If the GitHub Actions workflow fails before publishing, fix the issue and move the tag to the fixed release commit:
+
+```sh
+git tag -d v0.3.0
+git push origin :refs/tags/v0.3.0
+git tag -a v0.3.0 -m "Release v0.3.0"
+git push origin v0.3.0
+```
+
+Only do this if the crate was not published. Once crates.io accepts a version, that version cannot be overwritten.
 
 ## 8. After Publishing
 

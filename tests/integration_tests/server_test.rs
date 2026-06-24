@@ -3,17 +3,10 @@
 //! These tests verify the full server functionality including HTTP handlers,
 //! file serving, and SSE streaming.
 
-use axum::{
-    Router,
-    body::Body,
-    http::{Request, StatusCode},
-    routing::{get, post},
-};
 use bytes::BytesMut;
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc, time::Duration};
 use tempfile::TempDir;
 use tokio::sync::{Mutex, broadcast};
-use tower::ServiceExt;
 
 use super::common;
 use common::fixtures;
@@ -32,7 +25,6 @@ struct TestInnerState {
 enum TestSignalEvent {
     AddedNewFile,
     UpdatedFile { updated_file: PathBuf, html: String },
-    ActiveFileChanged,
 }
 
 impl TestInnerState {
@@ -60,7 +52,7 @@ fn create_test_state(file_path: PathBuf) -> Arc<TestAppState> {
 
 #[tokio::test]
 async fn test_server_starts_with_valid_file() {
-    let (temp_dir, file_path) = common::create_temp_file(fixtures::SIMPLE_MARKDOWN);
+    let (_temp_dir, file_path) = common::create_temp_file(fixtures::SIMPLE_MARKDOWN);
     let state = create_test_state(file_path.clone());
 
     // Verify state was initialized correctly
@@ -189,8 +181,6 @@ async fn test_concurrent_state_access() {
 
     let file_path1 = file_path.clone();
     let file_path2 = file_path.clone();
-    let file_path3 = file_path.clone();
-
     let handle1 = tokio::spawn(async move {
         for _ in 0..100 {
             let guard = state1.lock().await;

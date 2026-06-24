@@ -105,13 +105,8 @@ async fn main() -> eyre::Result<()> {
     let port = args.port.unwrap_or(0);
 
     let file = match args.input {
-        Some(f) => {
-            if f.is_file() {
-                PathBuf::from(f.filename())
-            } else {
-                return Err(GlyphoError::NotProvided.into());
-            }
-        }
+        Some(f) if f.is_file() => PathBuf::from(f.filename()),
+        Some(_) => return Err(GlyphoError::NotProvided.into()),
 
         None => return Err(GlyphoError::NotProvided.into()),
     };
