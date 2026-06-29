@@ -237,7 +237,7 @@ Back to [[Normal]] text with [[Multiple|Links]] in [[One|Line]].
         #[test]
         fn test_plain_text_unchanged(text in "[a-zA-Z0-9 ,.!?]{0,100}") {
             // Text without [[ should remain unchanged
-            let text_no_brackets = text.replace('[', "").replace(']', "");
+            let text_no_brackets = text.replace(['[', ']'], "");
             let result = wikilinks_to_markdown(&text_no_brackets);
             prop_assert_eq!(result, text_no_brackets);
         }

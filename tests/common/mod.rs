@@ -2,21 +2,8 @@
 //!
 //! This module provides shared functionality for integration tests.
 
-use axum::{
-    Router,
-    routing::{get, post},
-};
 use std::path::PathBuf;
-use std::sync::Arc;
 use tempfile::TempDir;
-use tokio::sync::Mutex;
-
-/// Test server configuration
-pub struct TestServer {
-    pub temp_dir: TempDir,
-    pub file_path: PathBuf,
-    pub app: Router,
-}
 
 /// Create a temporary markdown file with the given content
 pub fn create_temp_file(content: &str) -> (TempDir, PathBuf) {

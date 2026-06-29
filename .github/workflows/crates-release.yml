@@ -1,0 +1,125 @@
+name: Publish crate to crates.io
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - Cargo.toml
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish to crates.io instead of only running the release checks"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  publish-crate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Check Cargo.toml version changed
+        id: version-change
+        if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
+        run: |
+          current="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
+          previous="$(git show "${{ github.event.before }}:Cargo.toml" 2>/dev/null | sed -n 's/^version = "\(.*\)"/\1/p' | head -n1)"
+
+          echo "previous=$previous"
+          echo "current=$current"
+
+          if [ "$current" = "$previous" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip if package version did not change
+        if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/') && steps.version-change.outputs.changed != 'true'
+        run: |
+          echo "Cargo.toml changed, but the package version did not. Skipping release checks."
+
+      - name: Install Rust toolchain
+        if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/') || steps.version-change.outputs.changed == 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Rust build
+        if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/') || steps.version-change.outputs.changed == 'true'
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Node.js
+        if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/') || steps.version-change.outputs.changed == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: glypho-web/package-lock.json
+
+      - name: Install frontend dependencies
+        if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/') || steps.version-change.outputs.changed == 'true'
+        working-directory: glypho-web
+        run: npm ci
+
+      - name: Build frontend template
+        if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/') || steps.version-change.outputs.changed == 'true'
+        working-directory: glypho-web
+        run: |
+          npm run build
+          cp ./dist/index.html ../src/template.html
+
+      - name: Check release tag matches Cargo.toml
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
+          if [ "$tag" != "$version" ]; then
+            echo "Tag v$tag does not match Cargo.toml version $version" >&2
+            exit 1
+          fi
+
+      - name: Check generated template is committed
+        if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/') || steps.version-change.outputs.changed == 'true'
+        run: |
+          if ! git diff --exit-code -- src/template.html; then
+            echo "src/template.html is not up to date. Run npm run build in glypho-web and commit the generated template." >&2
+            exit 1
+          fi
+
+      - name: Check formatting
+        if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/') || steps.version-change.outputs.changed == 'true'
+        run: cargo fmt --check
+
+      - name: Run Clippy
+        if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/') || steps.version-change.outputs.changed == 'true'
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run tests
+        if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/') || steps.version-change.outputs.changed == 'true'
+        run: cargo test --locked
+
+      - name: Build release binary
+        if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/') || steps.version-change.outputs.changed == 'true'
+        run: cargo build --release --locked
+
+      - name: Dry-run cargo publish
+        if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/') || steps.version-change.outputs.changed == 'true'
+        run: cargo publish --dry-run --locked
+
+      - name: Publish to crates.io
+        if: startsWith(github.ref, 'refs/tags/') || inputs.publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        run: cargo publish --locked
