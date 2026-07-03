@@ -103,10 +103,10 @@ async fn main() -> eyre::Result<()> {
     let args = Args::parse();
 
     let port = args.port.unwrap_or(0);
-    let theme_css = match args.theme {
-        Some(path) => Some(std::fs::read_to_string(&path)?),
-        None => None,
-    };
+
+    let theme_css = args
+        .theme
+        .and_then(|path| std::fs::read_to_string(&path).ok());
 
     let file = match args.input {
         Some(f) => {
