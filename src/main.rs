@@ -103,6 +103,10 @@ async fn main() -> eyre::Result<()> {
     let args = Args::parse();
 
     let port = args.port.unwrap_or(0);
+    let theme_css = match args.theme {
+        Some(path) => Some(std::fs::read_to_string(&path)?),
+        None => None,
+    };
 
     let file = match args.input {
         Some(f) => {
@@ -119,7 +123,9 @@ async fn main() -> eyre::Result<()> {
     check_uniqueness(file.clone()).await?;
     info!("Starting Glypho...");
 
-    let shared_state = Arc::new(Mutex::new(InnerState::new(file.clone())));
+    let mut inner_state = InnerState::new(file.clone());
+    inner_state.set_theme_css(theme_css);
+    let shared_state = Arc::new(Mutex::new(inner_state));
 
     let serve_dir = ServeDir::new(file.parent().unwrap());
     let router = Router::new()

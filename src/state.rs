@@ -401,10 +401,20 @@ pub async fn root(State(state): State<Arc<AppState>>) -> Html<String> {
     let local_state = state.clone();
 
     let file = { local_state.lock().await.active_file.clone() };
+    let theme_css = {
+        local_state
+            .lock()
+            .await
+            .theme_css
+            .clone()
+            .unwrap_or_default()
+    };
 
     watch_file(file, state.clone()).await;
 
-    let html = TEMPLATE.to_string();
+    // Escape any </style> inside the user CSS so it cannot close the injected tag early.
+    let theme_css = theme_css.replace("</style>", "<\\/style>");
+    let html = TEMPLATE.replace("/*! GLYPHO_THEME_CSS */", &theme_css);
     Html(html)
 }
 
@@ -422,6 +432,7 @@ pub struct InnerState {
     event_sender: Sender<SignalEvents>,
     // event_reciever: Receiver<SignalEvents>,
     watched_files: Vec<PathBuf>,
+    pub theme_css: Option<String>,
 }
 
 impl InnerState {
@@ -436,7 +447,13 @@ impl InnerState {
             active_file: first_file,
             event_sender,
             watched_files: vec![],
+            theme_css: None,
         }
+    }
+
+    pub fn set_theme_css(&mut self, css: Option<String>) -> &mut Self {
+        self.theme_css = css;
+        self
     }
 
     fn reload_file(&mut self, file: &Path, mut buffer: BytesMut, html: String) -> &mut Self {
