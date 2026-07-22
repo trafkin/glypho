@@ -589,11 +589,18 @@ mod tests {
         (temp_dir, file_path)
     }
 
+    /// A platform-agnostic path used purely as a map key / value — these
+    /// tests never touch the filesystem, so the path only needs to be a
+    /// valid relative `PathBuf` on any OS (no Unix-absolute literals).
+    fn dummy_path(name: &str) -> PathBuf {
+        PathBuf::from("glypho-test").join(name)
+    }
+
     // ==================== InnerState Tests ====================
 
     #[test]
     fn test_inner_state_new() {
-        let file_path = PathBuf::from("/tmp/test.md");
+        let file_path = dummy_path("test.md");
         let state = InnerState::new(file_path.clone());
 
         assert_eq!(state.active_file, file_path);
@@ -603,7 +610,7 @@ mod tests {
 
     #[test]
     fn test_inner_state_new_initializes_buffer() {
-        let file_path = PathBuf::from("/tmp/test.md");
+        let file_path = dummy_path("test.md");
         let state = InnerState::new(file_path.clone());
 
         let buffer = state.files.get(&file_path).unwrap();
@@ -613,7 +620,7 @@ mod tests {
 
     #[test]
     fn test_inner_state_reload_file() {
-        let file_path = PathBuf::from("/tmp/test.md");
+        let file_path = dummy_path("test.md");
         let mut state = InnerState::new(file_path.clone());
 
         let buffer = BytesMut::with_capacity(100);
@@ -627,7 +634,7 @@ mod tests {
 
     #[test]
     fn test_inner_state_reload_file_clears_old_content() {
-        let file_path = PathBuf::from("/tmp/test.md");
+        let file_path = dummy_path("test.md");
         let mut state = InnerState::new(file_path.clone());
 
         // First reload
@@ -723,7 +730,10 @@ fn main() {
 
     #[test]
     fn test_inner_state_render_file_not_found() {
-        let file_path = PathBuf::from("/nonexistent/path/file.md");
+        // A path that provably does not exist on any OS: an untouched file
+        // inside a fresh temp directory.
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("definitely-missing.md");
         let mut state = InnerState::new(file_path.clone());
 
         let result = state.render(&file_path);
@@ -776,11 +786,11 @@ $$
     #[test]
     fn test_signals_creation() {
         let signals = Signals {
-            file: Some(PathBuf::from("/path/to/file.md")),
+            file: Some(dummy_path("file.md")),
             first: true,
         };
 
-        assert_eq!(signals.file, Some(PathBuf::from("/path/to/file.md")));
+        assert_eq!(signals.file, Some(dummy_path("file.md")));
         assert!(signals.first);
     }
 
@@ -800,10 +810,10 @@ $$
     #[test]
     fn test_add_file_request_creation() {
         let request = AddFileRequest {
-            file: PathBuf::from("/path/to/new_file.md"),
+            file: dummy_path("new_file.md"),
         };
 
-        assert_eq!(request.file, PathBuf::from("/path/to/new_file.md"));
+        assert_eq!(request.file, dummy_path("new_file.md"));
     }
 
     #[test]
@@ -827,13 +837,13 @@ $$
     #[test]
     fn test_signal_events_updated_file_clone() {
         let event = SignalEvents::UpdatedFile {
-            updated_file: PathBuf::from("/test.md"),
+            updated_file: dummy_path("test.md"),
             html: "<p>Test</p>".to_string(),
         };
         let cloned = event.clone();
 
         if let SignalEvents::UpdatedFile { updated_file, html } = cloned {
-            assert_eq!(updated_file, PathBuf::from("/test.md"));
+            assert_eq!(updated_file, dummy_path("test.md"));
             assert_eq!(html, "<p>Test</p>");
         } else {
             panic!("Expected UpdatedFile variant");
@@ -852,7 +862,7 @@ $$
         let events: Vec<SignalEvents> = vec![
             SignalEvents::AddedNewFile,
             SignalEvents::UpdatedFile {
-                updated_file: PathBuf::from("/test.md"),
+                updated_file: dummy_path("test.md"),
                 html: String::new(),
             },
             SignalEvents::ActiveFileChanged,
@@ -865,7 +875,7 @@ $$
 
     #[tokio::test]
     async fn test_event_sender_broadcast() {
-        let file_path = PathBuf::from("/tmp/test.md");
+        let file_path = dummy_path("test.md");
         let state = InnerState::new(file_path);
 
         let mut receiver = state.event_sender.subscribe();
@@ -880,7 +890,7 @@ $$
 
     #[tokio::test]
     async fn test_event_sender_multiple_subscribers() {
-        let file_path = PathBuf::from("/tmp/test.md");
+        let file_path = dummy_path("test.md");
         let state = InnerState::new(file_path);
 
         let mut receiver1 = state.event_sender.subscribe();
