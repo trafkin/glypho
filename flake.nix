@@ -35,7 +35,9 @@
 
         rustToolchain = pkgs.pkgsBuildHost.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
 
-        craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
+        craneLib = (crane.mkLib pkgs).overrideScope (final: prev: {
+          stdenvSelector = p: p.clangStdenv;
+        });
 
         cargoPackage = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).package;
 
@@ -88,7 +90,7 @@
 
         commonArgs =
           {
-            inherit src stdenv;
+            inherit src;
             CARGO_BUILD_TARGET = cargoTarget;
             buildInputs = with pkgs;
               [
@@ -221,7 +223,7 @@
         devShells.default = (
           craneLib.devShell
           {
-            inherit (self.checks.${system}.pre-commit-check) shellHook stdenv;
+            inherit (self.checks.${system}.pre-commit-check) shellHook;
             CARGO_BUILD_TARGET = cargoTarget;
 
             nativeBuildInputs = with pkgs;
@@ -239,9 +241,9 @@
             buildInputs = with pkgs;
               [
                 rustToolchain
-                self.checks.${system}.pre-commit-check.enabledPackages
                 clang
               ]
+              ++ self.checks.${system}.pre-commit-check.enabledPackages
               ++ pkgs.lib.optionals isLinux [
                 mold
                 openssl
