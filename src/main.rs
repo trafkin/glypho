@@ -26,12 +26,12 @@ use crate::{
     state::{InnerState, event_handler, root},
 };
 
-// #[cfg(target_env = "musl")]
-// use mimalloc::MiMalloc;
-//
-// #[cfg(target_env = "musl")]
-// #[global_allocator]
-// static GLOBAL: MiMalloc = MiMalloc;
+#[cfg(target_env = "musl")]
+use mimalloc::MiMalloc;
+
+#[cfg(target_env = "musl")]
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 #[derive(Serialize, Deserialize)]
 struct ProcessStatus {
@@ -142,15 +142,8 @@ async fn main() -> eyre::Result<()> {
         .and_then(|path| std::fs::read_to_string(&path).ok());
 
     let file = match args.input {
-        Some(f) => {
-            if f.is_file() {
-                PathBuf::from(f.filename())
-            } else {
-                return Err(GlyphoError::NotProvided.into());
-            }
-        }
-
-        None => return Err(GlyphoError::NotProvided.into()),
+        Some(f) if f.is_file() => PathBuf::from(f.filename()),
+        _ => return Err(GlyphoError::NotProvided.into()),
     };
 
     check_uniqueness(file.clone()).await?;
@@ -199,6 +192,29 @@ async fn main() -> eyre::Result<()> {
     }
 
     Ok(())
+}
+
+fn logger() {
+    // If you want to see debug logs define the env var as GLYPHO=debug
+    let log_level = env::var("GLYPHO").unwrap_or_else(|_| "info".into());
+
+    let is_debug = log_level == "debug";
+
+    // Logger
+    tracing_subscriber::registry()
+        .with(
+            fmt::layer()
+                .without_time()
+                .with_file(is_debug)
+                .with_line_number(is_debug)
+                .with_target(is_debug)
+                .with_level(is_debug),
+        )
+        .with(
+            EnvFilter::try_new(format!("glypho={}", log_level))
+                .expect("error in EnvFilter (Logger)"),
+        )
+        .init();
 }
 
 #[cfg(test)]
@@ -291,27 +307,4 @@ mod tests {
 
         assert!(!pidfile.exists(), "stale pidfile should be removed");
     }
-}
-
-fn logger() {
-    // If you want to see debug logs define the env var as GLYPHO=debug
-    let log_level = env::var("GLYPHO").unwrap_or_else(|_| "info".into());
-
-    let is_debug = log_level == "debug";
-
-    // Logger
-    tracing_subscriber::registry()
-        .with(
-            fmt::layer()
-                .without_time()
-                .with_file(is_debug)
-                .with_line_number(is_debug)
-                .with_target(is_debug)
-                .with_level(is_debug),
-        )
-        .with(
-            EnvFilter::try_new(format!("glypho={}", log_level))
-                .expect("error in EnvFilter (Logger)"),
-        )
-        .init();
 }

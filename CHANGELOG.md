@@ -10,6 +10,8 @@ All notable changes to this project will be documented in this file.
 - Nix flake builds on all default systems (`x86_64-linux`, `aarch64-linux`, `x86_64-darwin`, `aarch64-darwin`)
 - CI workflow running the test suite on Linux, macOS, and Windows, plus `nix flake check` on Linux and macOS
 - Tag-triggered release workflow publishing per-OS artifacts (musl tarball, `.deb`, macOS tarball, Windows zip)
+- Nix flake migrated to flake-parts + rust-flake: autowired `glypho-clippy` check and `glypho-doc` package, `formatter` output, and `nixpkgs.pkgs` injection (musl/mold, offline npm frontend, UPX, and `.deb` packaging behavior preserved)
+- **Breaking (flake outputs)**: `checks.runCargoTests` removed — tests still run in the native CI matrix; the derivation remains available as `packages.runCargoTests`
 
 ### Bug Fixes
 
