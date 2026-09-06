@@ -28,7 +28,7 @@ open = "5.3.2"
 color-eyre = "0.6.5"
 asynk-strim = "0.1.4"
 datastar = { version = "0.3.1", features = ["axum"] }
-xdg = "3.0.0"
+etcetera = "0.11.0"
 serde = { version = "1.0.228", features = ["derive"] }
 toml = "1.1.2"
 lazy-regex = "3.5.1"
@@ -64,6 +64,7 @@ async-trait = "0.1"
 walkdir = "2.5.0"
 eyre = "0.6.12"
 handlebars = "6.3.2"
+which = "8.0"
 
 [profile.release]
 opt-level = "z"

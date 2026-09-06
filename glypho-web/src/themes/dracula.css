@@ -1,0 +1,34 @@
+:root {
+  /* 🧛 Dracula */
+
+  --rosewater: #ff5555;
+  --flamingo: #ff79c6;
+  --pink: #ff79c6;
+  --mauve: #bd93f9;
+  --red: #ff5555;
+  --maroon: #ff6e6e;
+  --peach: #ffb86c;
+  --yellow: #f1fa8c;
+  --green: #50fa7b;
+  --teal: #8be9fd;
+  --sky: #8be9fd;
+  --sapphire: #6272a4;
+  --blue: #6272a4;
+  --lavender: #bd93f9;
+
+  --text: #f8f8f2;
+  --subtext1: #e0e0e0;
+  --subtext0: #cfcfcf;
+
+  --overlay2: #7f7f7f;
+  --overlay1: #6b6b6b;
+  --overlay0: #555555;
+
+  --surface2: #44475a;
+  --surface1: #3b3e51;
+  --surface0: #343746;
+
+  --base: #282a36;
+  --mantle: #21222c;
+  --crust: #191a21;
+}

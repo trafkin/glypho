@@ -1,0 +1,34 @@
+:root {
+  /* 🌊 Kanagawa Wave */
+
+  --rosewater: #c34043; /* red */
+  --flamingo: #e82424;
+  --pink: #d27e99;
+  --mauve: #957fb8;
+  --red: #e82424;
+  --maroon: #c34043;
+  --peach: #ffa066;
+  --yellow: #e6c384;
+  --green: #98bb6c;
+  --teal: #7aa89f;
+  --sky: #7fb4ca;
+  --sapphire: #658594;
+  --blue: #7e9cd8;
+  --lavender: #938aa9;
+
+  --text: #dcd7ba;
+  --subtext1: #c8c093;
+  --subtext0: #a6a69c;
+
+  --overlay2: #9e9b93;
+  --overlay1: #727169;
+  --overlay0: #5a5851;
+
+  --surface2: #54546d;
+  --surface1: #363646;
+  --surface0: #2a2a37;
+
+  --base: #1f1f28;
+  --mantle: #1a1a22;
+  --crust: #16161d;
+}

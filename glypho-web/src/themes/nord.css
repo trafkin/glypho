@@ -1,0 +1,34 @@
+:root {
+  /* ❄️ Nord */
+
+  --rosewater: #bf616a;
+  --flamingo: #d08770;
+  --pink: #b48ead;
+  --mauve: #b48ead;
+  --red: #bf616a;
+  --maroon: #bf616a;
+  --peach: #d08770;
+  --yellow: #ebcb8b;
+  --green: #a3be8c;
+  --teal: #8fbcbb;
+  --sky: #88c0d0;
+  --sapphire: #81a1c1;
+  --blue: #5e81ac;
+  --lavender: #81a1c1;
+
+  --text: #eceff4;
+  --subtext1: #e5e9f0;
+  --subtext0: #d8dee9;
+
+  --overlay2: #a3a3a3;
+  --overlay1: #7b7b7b;
+  --overlay0: #616161;
+
+  --surface2: #4c566a;
+  --surface1: #434c5e;
+  --surface0: #3b4252;
+
+  --base: #2e3440;
+  --mantle: #2a303c;
+  --crust: #242933;
+}

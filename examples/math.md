@@ -63,4 +63,8 @@ $$
 i\hbar \frac{\partial}{\partial t} \Psi(\mathbf{r}, t) = \hat{H} \Psi(\mathbf{r}, t)
 $$
 
+$$
+H:=\sum_{b_2 \in\{0,1\}} \sum_{b_2 \in\{0,1\}} \cdots \sum_{b_v \in\{0,1\}} g\left(b_1, \ldots, b_v\right) .
+$$
+
 ---

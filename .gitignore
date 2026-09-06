@@ -6,3 +6,6 @@
 /repo
 /.pi-lens
 .pre-commit-config.yaml
+/openspec
+.omp
+.pi
