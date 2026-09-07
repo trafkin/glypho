@@ -33,6 +33,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 toml = "1.1.2"
 lazy-regex = "3.5.1"
 reqwest = { version = "0.13.1", default-features = false, features = ["json"] }
+mimalloc = "0.1.52"
 
 
 [dev-dependencies]
