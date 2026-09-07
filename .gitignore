@@ -10,3 +10,4 @@
 .omp
 .pi
 /daemon.sock
+/.codegraph
