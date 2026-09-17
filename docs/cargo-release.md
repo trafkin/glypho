@@ -1,5 +1,9 @@
 # Cargo Release Guide
 
+> **Note:** Binary releases are automated. Pushing a `v*` tag runs `.github/workflows/release.yml`,
+> which builds per-OS artifacts (Linux musl + `.deb`, macOS binary, Windows `.exe`) and creates
+> the GitHub release. `cargo publish` remains a manual step — this checklist covers it.
+
 Use this checklist when publishing a new Glypho release to crates.io.
 
 ## Prerequisites
@@ -132,7 +136,9 @@ If you release from a branch other than `main`, push that branch instead.
 
 - Confirm the crate page shows the new version on crates.io
 - Confirm the GitHub tag points to the release commit
-- Create a GitHub release from the tag if you use GitHub releases
+- Confirm the release workflow (`.github/workflows/release.yml`) finished and the GitHub release
+  for the tag carries all four artifacts: the musl tarball, the `.deb`, the macOS tarball, and
+  the Windows zip
 - Update any downstream packaging, including the Flatpak manifest, if needed
 
 ## Rollback Notes

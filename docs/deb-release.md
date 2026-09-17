@@ -1,8 +1,12 @@
 # Debian Package Release Guide
 
+> **Note:** Releases are automated. Pushing a `v*` tag runs `.github/workflows/release.yml`,
+> which builds the `.deb` (alongside the macOS and Windows artifacts) and attaches everything
+> to a GitHub release. The manual steps below remain for local verification and troubleshooting.
+
 Use this checklist when building and publishing a Glypho `.deb` release.
 
-The Debian package is defined in `flake.nix` as the `build_deb` package. It builds the Nix `glypho` package, copies the binary into `package/usr/bin`, writes a Debian `control` file, and runs `dpkg-deb`.
+The Debian package is defined in `flake.nix` as the `build_deb` package. It builds the Nix `glypho` package, copies the binary into `package/usr/bin`, writes a Debian `control` file, and runs `dpkg-deb`. The `build_deb` output exists only on `x86_64-linux`.
 
 The package name, version, and description are read from `Cargo.toml`, so the `.deb` version follows the normal Cargo release version.
 
@@ -136,7 +140,12 @@ If you release from a branch other than `main`, push that branch instead.
 
 ## 7. Publish the `.deb`
 
-The `gh` command is GitHub's CLI. If it is not installed on your system, enter the Nix dev shell first:
+The preferred path is the automated pipeline: push the tag and let `.github/workflows/release.yml`
+build and attach the `.deb` to the GitHub release. To rehearse the pipeline without publishing,
+trigger it manually (`workflow_dispatch`) from the Actions tab — artifacts are uploaded to the
+workflow run instead of a release.
+
+For a manual publish, the `gh` command is GitHub's CLI. If it is not installed on your system, enter the Nix dev shell first:
 
 ```sh
 nix develop

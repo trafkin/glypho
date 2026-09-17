@@ -1,16 +1,23 @@
+use std::path::Path;
 use std::process::Command;
 
 fn main() -> eyre::Result<()> {
-    Command::new("ls").current_dir("./").spawn()?;
-    Command::new("npm")
+    let npm = which::which("npm")
+        .map_err(|_| eyre::eyre!("npm not found on PATH; install Node.js to build glypho"))?;
+
+    let status = Command::new(npm)
         .current_dir("./glypho-web/")
         .args(["run", "build"])
-        .spawn()?;
+        .status()?;
+    if !status.success() {
+        eyre::bail!("frontend build failed: `npm run build` exited with {status}");
+    }
 
-    Command::new("cp")
-        .current_dir("./glypho-web/")
-        .args(["./dist/index.html", "../src/template.html"])
-        .spawn()?;
+    let dist = Path::new("./glypho-web/dist/index.html");
+    if !dist.exists() {
+        eyre::bail!("frontend build output missing: {}", dist.display());
+    }
+    std::fs::copy(dist, "./src/template.html")?;
 
     println!("cargo::rerun-if-changed=build.rs");
     println!("cargo::rerun-if-changed=./glypho-web/src/*");

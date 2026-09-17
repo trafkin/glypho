@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Features
+
+- Cross-platform support: glypho now builds and runs on Linux, macOS, and Windows
+- Nix flake builds on all default systems (`x86_64-linux`, `aarch64-linux`, `x86_64-darwin`, `aarch64-darwin`)
+- CI workflow running the test suite on Linux, macOS, and Windows, plus `nix flake check` on Linux and macOS
+- Tag-triggered release workflow publishing per-OS artifacts (musl tarball, `.deb`, macOS tarball, Windows zip)
+- Nix flake migrated to flake-parts + rust-flake: autowired `glypho-clippy` check and `glypho-doc` package, `formatter` output, and `nixpkgs.pkgs` injection (musl/mold, offline npm frontend, UPX, and `.deb` packaging behavior preserved)
+- **Breaking (flake outputs)**: `checks.runCargoTests` removed — tests still run in the native CI matrix; the derivation remains available as `packages.runCargoTests`
+
+### Bug Fixes
+
+- Single-instance detection no longer depends on Linux-only `/proc`; it probes the recorded server port instead
+- Runtime pidfile uses platform-appropriate directories (`etcetera` crate) instead of XDG-only paths
+- `build.rs` no longer shells out to Unix `cp` and fails loudly when the frontend build fails (previously ignored exit statuses)
+- Nix build now actually rebuilds the frontend (previously kept the stale committed template silently)
+
 ## 0.2.1 - 2026-06-22
 
 ### Bug Fixes

@@ -1,0 +1,21 @@
+pkgbase = glypho-git
+	pkgdesc = A markdown previewer focused on speed and simplicity
+	pkgver = 0.2.0.r0.g5854904
+	pkgrel = 1
+	url = https://github.com/trafkin/glypho
+	arch = x86_64
+	arch = aarch64
+	license = unknown
+	makedepends = rust
+	makedepends = cargo
+	makedepends = nodejs
+	makedepends = npm
+	makedepends = git
+	depends = gcc-libs
+	depends = glibc
+	provides = glypho
+	conflicts = glypho
+	source = git+https://github.com/trafkin/glypho.git
+	sha256sums = SKIP
+
+pkgname = glypho-git

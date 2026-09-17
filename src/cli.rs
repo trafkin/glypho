@@ -1,5 +1,6 @@
 use clap::Parser;
 use clap_stdin::FileOrStdin;
+use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 pub struct Args {
@@ -9,6 +10,8 @@ pub struct Args {
     pub port: Option<u16>,
     #[arg(short, long, default_value_t = false)]
     pub no_browser: bool,
+    #[arg(short, long)]
+    pub theme: Option<PathBuf>,
 }
 
 #[cfg(test)]
