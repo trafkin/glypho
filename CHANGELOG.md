@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- `--server-mode` starts Glypho without an input file, showing an open-form page where you type a Markdown path to open; a `POST /open` endpoint tracks and activates a file atomically
+- Client handoff now opens the handed-off file (track + activate) instead of only adding it to the navbar
+- `list_tracked_files` (MCP) reports a `null` active file when nothing is open
 - MCP server over Streamable HTTP at `POST /mcp` (via the official `rmcp` Rust SDK), letting AI agents detect Markdown files, ask which to open, and track them in the live preview through the `detect_markdown_files`, `open_markdown_files`, and `list_tracked_files` tools
 - MCP file opens keep the human-first default: they switch the connected preview tab, or open the user's default browser when no preview is connected (`--no-browser` suppresses this; the tools never return rendered content to the agent)
 - Cross-platform support: glypho now builds and runs on Linux, macOS, and Windows

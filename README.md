@@ -58,7 +58,25 @@ nix develop
 
 ## Usage
 
+```sh
+glypho README.md          # open a Markdown file in the preview
+glypho --port 3000 README.md   # on a fixed port
+glypho --no-browser note.md    # don't open the browser
+glypho --server-mode           # start empty, no initial file
+```
+
 ![Demo Animation](./assets/glypho.gif)
+
+### Server mode
+
+By default Glypho needs a file to open. `--server-mode` starts the preview
+without one, showing an **open-form** page where you can type the path of a
+Markdown file to open. Relative paths are resolved against the directory you
+started Glypho in.
+
+You can also hand files to a running (server-mode or normal) instance from the
+command line — a second `glypho other.md` invocation opens the file in the
+existing preview instead of starting a second server.
 
 ## MCP server (for AI agents)
 

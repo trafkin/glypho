@@ -24,7 +24,7 @@ use tracing::info;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 use crate::error::GlyphoError;
-use crate::state::{AddFileRequest, add_file, change_active};
+use crate::state::{AddFileRequest, add_file, change_active, open_file};
 use crate::{
     cli::Args,
     state::{InnerState, event_handler, root},
@@ -76,7 +76,11 @@ fn cleanup() -> eyre::Result<()> {
     Ok(())
 }
 
-async fn check_uniqueness(file_to_add: PathBuf) -> eyre::Result<()> {
+/// Detect whether another glypho server is already running. In client mode
+/// (`file_to_add` is `Some`) a live server gets the file handed to it via
+/// `POST /open`. In server mode (`None`) there is nothing to hand off, so a
+/// live server is reported and the process exits.
+async fn check_uniqueness(file_to_add: Option<PathBuf>) -> eyre::Result<()> {
     let pidfile = pidfile_path()?;
     if !pidfile.exists() {
         return Ok(());
@@ -101,15 +105,23 @@ async fn check_uniqueness(file_to_add: PathBuf) -> eyre::Result<()> {
         .is_ok();
 
     if alive {
-        // client mode: hand the file to the running instance
-        let _res = client
-            .post(format!("http://localhost:{port}/add"))
-            .json(&AddFileRequest {
-                file: file_to_add.clone(),
-            })
-            .send()
-            .await?;
-        exit(0)
+        match file_to_add {
+            Some(path) => {
+                // client mode: hand the file to the running instance, opening
+                // it (track + activate).
+                let _res = client
+                    .post(format!("http://localhost:{port}/open"))
+                    .json(&AddFileRequest { file: path })
+                    .send()
+                    .await?;
+                exit(0)
+            }
+            None => {
+                // server mode: nothing to hand off, two servers are a footgun.
+                tracing::error!("Glypho is already running on port {port}");
+                exit(1)
+            }
+        }
     }
 
     // Stale pidfile: remove it and continue as the primary instance.
@@ -145,23 +157,36 @@ async fn main() -> eyre::Result<()> {
         .theme
         .and_then(|path| std::fs::read_to_string(&path).ok());
 
-    let file = match args.input {
-        Some(f) if f.is_file() => PathBuf::from(f.filename()),
-        _ => return Err(GlyphoError::NotProvided.into()),
+    // In server mode there is no input file: the process runs empty and files
+    // are opened later. Otherwise a file argument is still required.
+    let file: Option<PathBuf> = if args.server_mode {
+        None
+    } else {
+        let file = match args.input {
+            Some(f) if f.is_file() => PathBuf::from(f.filename()),
+            _ => return Err(GlyphoError::NotProvided.into()),
+        };
+        // Canonicalize so the initial file keys identically to files added
+        // later (which track_file canonicalizes before inserting).
+        Some(std::fs::canonicalize(&file).unwrap_or(file))
     };
-    // Canonicalize so the initial file keys identically to files added later
-    // (which track_file canonicalizes before inserting).
-    let file = std::fs::canonicalize(&file).unwrap_or(file);
 
     check_uniqueness(file.clone()).await?;
     info!("Starting Glypho...");
 
-    let mut inner_state = InnerState::new(file.clone());
+    let mut inner_state = match &file {
+        Some(f) => InnerState::new(f.clone()),
+        None => InnerState::empty(),
+    };
     inner_state.set_theme_css(theme_css);
     inner_state.set_browser_open_allowed(!args.no_browser);
     let shared_state = Arc::new(Mutex::new(inner_state));
 
-    let serve_dir = ServeDir::new(file.parent().unwrap());
+    let serve_dir = ServeDir::new(
+        file.as_ref()
+            .and_then(|f| f.parent().map(|p| p.to_path_buf()))
+            .unwrap_or_else(|| PathBuf::from(".")),
+    );
     let mcp_server = crate::mcp::GlyphoMcpServer::new(shared_state.clone());
     let mcp_service = StreamableHttpService::new(
         move || Ok(mcp_server.clone()),
@@ -174,6 +199,7 @@ async fn main() -> eyre::Result<()> {
         .fallback_service(serve_dir)
         .route("/sse", get(event_handler))
         .route("/add", post(add_file))
+        .route("/open", post(open_file))
         .route("/update", get(change_active))
         .nest_service("/mcp", mcp_service)
         .with_state(shared_state.clone());
@@ -184,9 +210,10 @@ async fn main() -> eyre::Result<()> {
     write_runtime(local_addr.port())?;
 
     let file_name = file
-        .file_name()
+        .as_ref()
+        .and_then(|f| f.file_name())
         .and_then(|fname| fname.to_str())
-        .unwrap_or("unknown");
+        .unwrap_or("server mode");
     tracing::info!(
         "Serving {} at http://{}",
         file_name,
@@ -319,7 +346,7 @@ mod tests {
         assert!(pidfile.exists());
 
         let file = PathBuf::from("some.md");
-        check_uniqueness(file).await.unwrap();
+        check_uniqueness(Some(file)).await.unwrap();
 
         assert!(!pidfile.exists(), "stale pidfile should be removed");
     }

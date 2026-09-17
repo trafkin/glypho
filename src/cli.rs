@@ -12,6 +12,8 @@ pub struct Args {
     pub no_browser: bool,
     #[arg(short, long)]
     pub theme: Option<PathBuf>,
+    #[arg(short, long, default_value_t = false)]
+    pub server_mode: bool,
 }
 
 #[cfg(test)]

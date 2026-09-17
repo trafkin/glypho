@@ -45,6 +45,11 @@
 		      data-signals:first="true"
 		>
 			<article id="markdown" data-init="@get('/sse')" class="prose lg:prose-lg dark:prose-invert">
+				<form class="my-12 flex flex-col gap-3" data-on:submit="@post('/open')">
+					<label for="open-file" class="text-sm font-medium">Open a Markdown file</label>
+					<input id="open-file" type="text" data-bind:file autocomplete="off" placeholder="/path/to/file.md" class="rounded-md px-4 py-2.5">
+					<button type="submit" class="rounded-md px-5 py-2.5 leading-5 font-semibold">Open</button>
+				</form>
 			</article>
 		</main>
 		<script type="module">

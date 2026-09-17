@@ -174,7 +174,7 @@ impl GlyphoMcpServer {
     async fn list_tracked_files(&self) -> Result<CallToolResult, McpError> {
         let (active_file, files) = list_files(&self.state).await;
         let result = serde_json::json!({
-            "active_file": active_file.display().to_string(),
+            "active_file": active_file.map(|p| p.display().to_string()),
             "files": files.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(),
         });
         Ok(CallToolResult::success(vec![ContentBlock::text(
