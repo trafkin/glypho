@@ -59,3 +59,49 @@ nix develop
 ## Usage
 
 ![Demo Animation](./assets/glypho.gif)
+
+## MCP server (for AI agents)
+
+Glypho exposes an [MCP](https://modelcontextprotocol.io) (Model Context
+Protocol) server over Streamable HTTP on the same port as the preview, so AI
+agents can detect Markdown files they created and open them in the live
+preview.
+
+Start Glypho with a fixed port:
+
+```sh
+glypho --port 3000 README.md
+```
+
+Then point your MCP client at `http://localhost:3000/mcp`. For example, in a
+client that accepts a URL-based MCP server configuration:
+
+```json
+{
+  "mcpServers": {
+    "glypho": {
+      "url": "http://localhost:3000/mcp"
+    }
+  }
+}
+```
+
+The server exposes three tools:
+
+| Tool | Description |
+| --- | --- |
+| `detect_markdown_files` | Scan a directory (or the client's first MCP root, or the current working directory) for Markdown files and return a question listing them. |
+| `open_markdown_files` | Track and open the chosen files in the live preview (`files` for explicit paths, `open_all: true` for every file proposed by the last scan). |
+| `list_tracked_files` | Show which files Glypho is tracking and which one is active. |
+
+The typical agent flow is: call `detect_markdown_files`, ask the user which
+files to open, then call `open_markdown_files` with the selection — so large
+batches of generated Markdown never flood the preview unprompted. The MCP
+endpoint binds to `127.0.0.1` only, like the rest of the server.
+
+Opening files over MCP keeps Glypho's normal behavior: the preview is for the
+human. If a preview tab is already connected, it switches to the opened file
+live; if no preview is connected (the tab was closed), Glypho opens your
+default browser, exactly as it does at startup. Start with `--no-browser` to
+suppress all browser opening. The tools themselves return only file paths and
+status — they never send rendered content back to the agent.

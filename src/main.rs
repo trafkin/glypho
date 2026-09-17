@@ -1,5 +1,6 @@
 mod cli;
 mod error;
+mod mcp;
 mod state;
 mod template;
 mod wikilinks;
@@ -8,6 +9,9 @@ use axum::routing::post;
 use axum::{Router, routing::get};
 
 use clap::Parser;
+use rmcp::transport::streamable_http_server::{
+    StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
+};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Write;
@@ -145,15 +149,25 @@ async fn main() -> eyre::Result<()> {
         Some(f) if f.is_file() => PathBuf::from(f.filename()),
         _ => return Err(GlyphoError::NotProvided.into()),
     };
+    // Canonicalize so the initial file keys identically to files added later
+    // (which track_file canonicalizes before inserting).
+    let file = std::fs::canonicalize(&file).unwrap_or(file);
 
     check_uniqueness(file.clone()).await?;
     info!("Starting Glypho...");
 
     let mut inner_state = InnerState::new(file.clone());
     inner_state.set_theme_css(theme_css);
+    inner_state.set_browser_open_allowed(!args.no_browser);
     let shared_state = Arc::new(Mutex::new(inner_state));
 
     let serve_dir = ServeDir::new(file.parent().unwrap());
+    let mcp_server = crate::mcp::GlyphoMcpServer::new(shared_state.clone());
+    let mcp_service = StreamableHttpService::new(
+        move || Ok(mcp_server.clone()),
+        LocalSessionManager::default().into(),
+        StreamableHttpServerConfig::default(),
+    );
     let router = Router::new()
         .route("/", get(root))
         // .route("/init", get(init))
@@ -161,10 +175,12 @@ async fn main() -> eyre::Result<()> {
         .route("/sse", get(event_handler))
         .route("/add", post(add_file))
         .route("/update", get(change_active))
-        .with_state(shared_state);
+        .nest_service("/mcp", mcp_service)
+        .with_state(shared_state.clone());
 
-    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await?;
+    let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}")).await?;
     let local_addr = listener.local_addr()?;
+    shared_state.lock().await.set_listen_port(local_addr.port());
     write_runtime(local_addr.port())?;
 
     let file_name = file

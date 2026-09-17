@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- MCP server over Streamable HTTP at `POST /mcp` (via the official `rmcp` Rust SDK), letting AI agents detect Markdown files, ask which to open, and track them in the live preview through the `detect_markdown_files`, `open_markdown_files`, and `list_tracked_files` tools
+- MCP file opens keep the human-first default: they switch the connected preview tab, or open the user's default browser when no preview is connected (`--no-browser` suppresses this; the tools never return rendered content to the agent)
 - Cross-platform support: glypho now builds and runs on Linux, macOS, and Windows
 - Nix flake builds on all default systems (`x86_64-linux`, `aarch64-linux`, `x86_64-darwin`, `aarch64-darwin`)
 - CI workflow running the test suite on Linux, macOS, and Windows, plus `nix flake check` on Linux and macOS
@@ -15,6 +17,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- The HTTP server now binds to `127.0.0.1` instead of `0.0.0.0`; remote preview over the LAN is no longer available (the liveness probe already assumed localhost)
 - Single-instance detection no longer depends on Linux-only `/proc`; it probes the recorded server port instead
 - Runtime pidfile uses platform-appropriate directories (`etcetera` crate) instead of XDG-only paths
 - `build.rs` no longer shells out to Unix `cp` and fails loudly when the frontend build fails (previously ignored exit statuses)
