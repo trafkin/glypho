@@ -19,7 +19,6 @@ use datastar::{
     prelude::{ExecuteScript, PatchElements, PatchSignals},
 };
 use eyre::bail;
-use futures::FutureExt;
 use markdown::{CompileOptions, Constructs, Options, ParseOptions};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -31,7 +30,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::{
-    Mutex, MutexGuard,
+    Mutex,
     broadcast::{self, Sender},
 };
 
@@ -106,7 +105,6 @@ pub async fn watch_file(file: PathBuf, state: Arc<AppState>) {
                             .map(|(f1, f2)| f1 == f2)
                             .unwrap_or(false)
                         {
-                            // let mut s = local_state.lock().await;
                             let buffer = {
                                 local_state
                                     .lock()
@@ -149,18 +147,23 @@ pub async fn watch_file(file: PathBuf, state: Arc<AppState>) {
     }
 }
 
-pub async fn add_file(
-    State(state): State<Arc<AppState>>,
-    extract::Json(file_request): extract::Json<AddFileRequest>,
-) -> impl IntoResponse {
-    let buffer = BytesMut::with_capacity(4096);
-    let file = file_request.file.clone();
-    state
-        .lock()
-        .then(|mut s: MutexGuard<InnerState>| async move {
-            s.files.insert(file_request.file.clone(), buffer);
-        })
-        .await;
+/// Insert `file` into the tracked files (idempotently), start watching it,
+/// and broadcast `AddedNewFile` so connected browsers refresh the navbar.
+/// Returns `true` if the file was newly added to the tracked set.
+///
+/// Paths are canonicalized first so the same file reached via different
+/// spellings (relative vs absolute, symlinks) shares one tracked entry.
+pub async fn track_file(state: &Arc<AppState>, file: PathBuf) -> bool {
+    let file = std::fs::canonicalize(&file).unwrap_or(file);
+    let newly_added = {
+        let mut s = state.lock().await;
+        if s.files.contains_key(&file) {
+            false
+        } else {
+            s.files.insert(file.clone(), BytesMut::with_capacity(4096));
+            true
+        }
+    };
 
     watch_file(file, state.clone()).await;
 
@@ -170,6 +173,50 @@ pub async fn add_file(
         .event_sender
         .send(SignalEvents::AddedNewFile);
 
+    newly_added
+}
+
+/// Set `file` as the active file and broadcast `ActiveFileChanged` so
+/// connected browsers re-render it.
+pub async fn activate_file(state: &Arc<AppState>, file: PathBuf) {
+    let mut s = state.lock().await;
+    s.active_file = file;
+    let _ = s.event_sender.send(SignalEvents::ActiveFileChanged);
+}
+
+/// Snapshot of the active file and every file Glypho currently knows about.
+pub async fn list_files(state: &Arc<AppState>) -> (PathBuf, Vec<PathBuf>) {
+    let s = state.lock().await;
+    (s.active_file.clone(), s.files.keys().cloned().collect())
+}
+
+/// Walk `dir` respecting `.gitignore` and skipping hidden paths, collecting
+/// Markdown files (`.md`, `.markdown`) sorted for stable output.
+pub fn scan_markdown_files(dir: &Path) -> Vec<PathBuf> {
+    let mut files: Vec<PathBuf> = ignore::WalkBuilder::new(dir)
+        .hidden(true)
+        .build()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_some_and(|ft| ft.is_file()))
+        .map(ignore::DirEntry::into_path)
+        .filter(|path| {
+            path.extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| {
+                    ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown")
+                })
+        })
+        .collect();
+    files.sort();
+    files
+}
+
+pub async fn add_file(
+    State(state): State<Arc<AppState>>,
+    extract::Json(file_request): extract::Json<AddFileRequest>,
+) -> impl IntoResponse {
+    track_file(&state, file_request.file).await;
+
     Json(AddFileResponse { ok: true })
 }
 
@@ -177,21 +224,36 @@ pub async fn change_active(
     State(state): State<Arc<AppState>>,
     ReadSignals(signals): ReadSignals<Signals>,
 ) -> impl IntoResponse {
-    state
-        .lock()
-        .then(|mut s: MutexGuard<InnerState>| async move {
-            match signals.file {
-                Some(ref f) => {
-                    s.active_file = f.clone();
-                }
-                None => {
-                    debug!("file not found");
-                }
-            };
-            let _ = s.event_sender.send(SignalEvents::ActiveFileChanged);
-        })
-        .await;
+    match signals.file {
+        Some(f) => activate_file(&state, f).await,
+        None => {
+            debug!("file not found");
+            let _ = state
+                .lock()
+                .await
+                .event_sender
+                .send(SignalEvents::ActiveFileChanged);
+        }
+    }
     Json(AddFileResponse { ok: true })
+}
+
+/// RAII guard that keeps the SSE client count accurate for the lifetime of
+/// one `/sse` stream. The count drops when the stream future is dropped
+/// (client disconnect or server shutdown).
+struct SseClientGuard {
+    state: Arc<AppState>,
+}
+
+impl Drop for SseClientGuard {
+    fn drop(&mut self) {
+        // The mutex is often contended at drop time; spawn so the decrement
+        // is not lost when the lock is currently held.
+        let state = self.state.clone();
+        tokio::spawn(async move {
+            state.lock().await.sse_client_disconnected();
+        });
+    }
 }
 
 pub async fn event_handler(
@@ -205,6 +267,11 @@ pub async fn event_handler(
             // render and start listening file changes
             // todo!();
             let local_state = state.clone();
+
+            local_state.lock().await.sse_client_connected();
+            let _guard = SseClientGuard {
+                state: local_state.clone(),
+            };
 
             if signals.first {
                 // let mut s = local_state.lock().await;
@@ -420,7 +487,6 @@ pub async fn root(State(state): State<Arc<AppState>>) -> Html<String> {
 
 #[derive(Clone, Debug)]
 pub enum SignalEvents {
-    // WatchFile { file: PathBuf },
     AddedNewFile,
     UpdatedFile { updated_file: PathBuf, html: String },
     ActiveFileChanged,
@@ -433,6 +499,16 @@ pub struct InnerState {
     // event_reciever: Receiver<SignalEvents>,
     watched_files: Vec<PathBuf>,
     pub theme_css: Option<String>,
+    /// Markdown files proposed by the MCP `detect_markdown_files` tool, held
+    /// so a follow-up `open_markdown_files(open_all = true)` has a referent.
+    pending_markdown_files: Vec<PathBuf>,
+    /// Port the HTTP listener bound to; set once in `main` after binding.
+    listen_port: Option<u16>,
+    /// Number of preview clients currently connected to `/sse`.
+    sse_clients: usize,
+    /// Whether glypho may open the user's browser (false when started with
+    /// `--no-browser`).
+    browser_open_allowed: bool,
 }
 
 impl InnerState {
@@ -448,12 +524,54 @@ impl InnerState {
             event_sender,
             watched_files: vec![],
             theme_css: None,
+            pending_markdown_files: vec![],
+            listen_port: None,
+            sse_clients: 0,
+            browser_open_allowed: true,
         }
     }
 
     pub fn set_theme_css(&mut self, css: Option<String>) -> &mut Self {
         self.theme_css = css;
         self
+    }
+
+    pub fn set_pending_markdown_files(&mut self, files: Vec<PathBuf>) -> &mut Self {
+        self.pending_markdown_files = files;
+        self
+    }
+
+    pub fn pending_markdown_files(&self) -> &[PathBuf] {
+        &self.pending_markdown_files
+    }
+
+    pub fn set_listen_port(&mut self, port: u16) -> &mut Self {
+        self.listen_port = Some(port);
+        self
+    }
+
+    pub fn listen_port(&self) -> Option<u16> {
+        self.listen_port
+    }
+
+    pub fn set_browser_open_allowed(&mut self, allowed: bool) -> &mut Self {
+        self.browser_open_allowed = allowed;
+        self
+    }
+
+    pub fn sse_client_connected(&mut self) {
+        self.sse_clients += 1;
+    }
+
+    pub fn sse_client_disconnected(&mut self) {
+        self.sse_clients = self.sse_clients.saturating_sub(1);
+    }
+
+    /// True when an external open (e.g. an MCP `open_markdown_files` call)
+    /// should bring the preview up in the user's default browser: browsers
+    /// are allowed and no preview client is currently connected.
+    pub fn should_open_preview(&self) -> bool {
+        self.browser_open_allowed && self.sse_clients == 0
     }
 
     fn reload_file(&mut self, file: &Path, mut buffer: BytesMut, html: String) -> &mut Self {
@@ -568,7 +686,7 @@ impl InnerState {
     }
 }
 
-type AppState = Mutex<InnerState>;
+pub type AppState = Mutex<InnerState>;
 
 #[cfg(test)]
 mod tests {
@@ -1097,6 +1215,130 @@ Custom HTML content
         assert!(result.is_ok());
         let html = result.unwrap();
         assert!(html.len() > content.len()); // HTML should be longer due to tags
+    }
+
+    // ==================== scan_markdown_files Tests ====================
+
+    /// Build a temp directory laid out as a git repo (the `ignore` crate only
+    /// applies `.gitignore` inside a repository) with a mix of Markdown and
+    /// non-Markdown files.
+    fn create_scan_fixture() -> (TempDir, PathBuf) {
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path();
+
+        // `.git` marker so `.gitignore` is honored
+        std::fs::create_dir(root.join(".git")).unwrap();
+
+        std::fs::write(root.join("a.md"), "# A").unwrap();
+        std::fs::write(root.join("b.markdown"), "# B").unwrap();
+        std::fs::write(root.join("c.txt"), "not markdown").unwrap();
+
+        std::fs::create_dir(root.join("sub")).unwrap();
+        std::fs::write(root.join("sub").join("nested.md"), "# Nested").unwrap();
+
+        std::fs::create_dir(root.join(".hidden")).unwrap();
+        std::fs::write(root.join(".hidden").join("secret.md"), "# Hidden").unwrap();
+
+        std::fs::write(root.join("ignored.md"), "# Ignored").unwrap();
+        std::fs::write(root.join(".gitignore"), "ignored.md\n").unwrap();
+
+        let root = root.to_path_buf();
+        (temp_dir, root)
+    }
+
+    #[test]
+    fn scan_finds_md_and_markdown_only() {
+        let (_temp_dir, root) = create_scan_fixture();
+        let files = scan_markdown_files(&root);
+        let names: Vec<_> = files
+            .iter()
+            .map(|p| p.file_name().unwrap().to_str().unwrap().to_owned())
+            .collect();
+
+        assert!(names.contains(&"a.md".to_owned()));
+        assert!(names.contains(&"b.markdown".to_owned()));
+        assert!(!names.contains(&"c.txt".to_owned()));
+    }
+
+    #[test]
+    fn scan_includes_nested_directories() {
+        let (_temp_dir, root) = create_scan_fixture();
+        let files = scan_markdown_files(&root);
+        assert!(files.iter().any(|p| p.ends_with("sub/nested.md")));
+    }
+
+    #[test]
+    fn scan_skips_hidden_directories() {
+        let (_temp_dir, root) = create_scan_fixture();
+        let files = scan_markdown_files(&root);
+        assert!(
+            !files
+                .iter()
+                .any(|p| p.to_string_lossy().contains(".hidden"))
+        );
+    }
+
+    #[test]
+    fn scan_respects_gitignore() {
+        let (_temp_dir, root) = create_scan_fixture();
+        let files = scan_markdown_files(&root);
+        assert!(!files.iter().any(|p| p.ends_with("ignored.md")));
+    }
+
+    #[test]
+    fn scan_returns_sorted_results() {
+        let (_temp_dir, root) = create_scan_fixture();
+        let files = scan_markdown_files(&root);
+        let mut sorted = files.clone();
+        sorted.sort();
+        assert_eq!(files, sorted);
+    }
+
+    // ==================== Preview open state Tests ====================
+
+    #[test]
+    fn test_sse_client_counting() {
+        let mut state = InnerState::new(dummy_path("test.md"));
+        assert!(state.should_open_preview(), "no clients yet");
+
+        state.sse_client_connected();
+        state.sse_client_connected();
+        assert!(!state.should_open_preview(), "clients connected");
+
+        state.sse_client_disconnected();
+        assert!(!state.should_open_preview(), "one client left");
+
+        state.sse_client_disconnected();
+        assert!(state.should_open_preview(), "all clients gone");
+    }
+
+    #[test]
+    fn test_sse_client_disconnect_saturates_at_zero() {
+        let mut state = InnerState::new(dummy_path("test.md"));
+        state.sse_client_disconnected();
+        state.sse_client_disconnected();
+        assert!(
+            state.should_open_preview(),
+            "count must not underflow below zero"
+        );
+    }
+
+    #[test]
+    fn test_should_open_preview_respects_no_browser() {
+        let mut state = InnerState::new(dummy_path("test.md"));
+        state.set_browser_open_allowed(false);
+        assert!(
+            !state.should_open_preview(),
+            "--no-browser must suppress auto-open even with no clients"
+        );
+    }
+
+    #[test]
+    fn test_listen_port_defaults_unset() {
+        let mut state = InnerState::new(dummy_path("test.md"));
+        assert!(state.listen_port().is_none());
+        state.set_listen_port(3999);
+        assert_eq!(state.listen_port(), Some(3999));
     }
 
     // ==================== Parameterized Tests ====================
