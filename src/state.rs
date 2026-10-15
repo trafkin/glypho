@@ -180,12 +180,13 @@ pub async fn track_file(state: &Arc<AppState>, file: PathBuf) -> bool {
 /// connected browsers re-render it.
 pub async fn activate_file(state: &Arc<AppState>, file: PathBuf) {
     let mut s = state.lock().await;
-    s.active_file = file;
+    s.active_file = Some(file);
     let _ = s.event_sender.send(SignalEvents::ActiveFileChanged);
 }
 
-/// Snapshot of the active file and every file Glypho currently knows about.
-pub async fn list_files(state: &Arc<AppState>) -> (PathBuf, Vec<PathBuf>) {
+/// Snapshot of the active file (when one is open) and every file Glypho
+/// currently knows about.
+pub async fn list_files(state: &Arc<AppState>) -> (Option<PathBuf>, Vec<PathBuf>) {
     let s = state.lock().await;
     (s.active_file.clone(), s.files.keys().cloned().collect())
 }
@@ -216,6 +217,21 @@ pub async fn add_file(
     extract::Json(file_request): extract::Json<AddFileRequest>,
 ) -> impl IntoResponse {
     track_file(&state, file_request.file).await;
+
+    Json(AddFileResponse { ok: true })
+}
+
+/// Track `file` and make it active in one request, so no tracked-but-not-
+/// active intermediate state is observable. The path is canonicalized first
+/// (resolving relative paths against the process CWD) so the active key
+/// matches the tracked key produced by `track_file`.
+pub async fn open_file(
+    State(state): State<Arc<AppState>>,
+    extract::Json(file_request): extract::Json<AddFileRequest>,
+) -> impl IntoResponse {
+    let file = std::fs::canonicalize(&file_request.file).unwrap_or(file_request.file);
+    track_file(&state, file.clone()).await;
+    activate_file(&state, file).await;
 
     Json(AddFileResponse { ok: true })
 }
@@ -274,51 +290,51 @@ pub async fn event_handler(
             };
 
             if signals.first {
-                // let mut s = local_state.lock().await;
-                let file = { local_state.lock().await.active_file.clone() };
-
-                let buffer = {
-                    local_state
-                        .lock()
-                        .await
-                        .files
-                        .get(&file)
-                        .map(|b| b.to_owned())
-                };
-                let rendered = { local_state.lock().await.render(&file) };
-
-                {
-                    let mut s = local_state.lock().await;
-                    if let Some((html, buf)) = rendered.as_ref().ok().zip(buffer) {
-                        s.reload_file(&file, buf.to_owned(), html.clone());
-                    };
-                }
-
-                // s.reload_file(file, buffer.unwrap(), rendered);
-
-                let html: String = match rendered {
-                    Ok(v) => v,
-                    Err(err) => {
-                        format!("Something weird happened:{}", err)
-                    }
-                };
+                // Always clear the `first` flag so clients don't re-run the
+                // initialization branch on a later reconnect.
                 let patch = PatchSignals::new(r#"{"first": false}"#);
-
                 let sse_event = patch.write_as_axum_sse_event();
                 yielder.yield_item(Ok(sse_event)).await;
 
-                let patch = PatchElements::new(html)
-                    .selector("article#markdown")
-                    .mode(ElementPatchMode::Inner);
+                // With no active file (server mode, empty) there is nothing to
+                // render; the open-file form stays visible in the page.
+                if let Some(file) = { local_state.lock().await.active_file.clone() } {
+                    let buffer = {
+                        local_state
+                            .lock()
+                            .await
+                            .files
+                            .get(&file)
+                            .map(|b| b.to_owned())
+                    };
+                    let rendered = { local_state.lock().await.render(&file) };
 
-                let sse_event = patch.write_as_axum_sse_event();
-                yielder.yield_item(Ok(sse_event)).await;
+                    {
+                        let mut s = local_state.lock().await;
+                        if let Some((html, buf)) = rendered.as_ref().ok().zip(buffer) {
+                            s.reload_file(&file, buf.to_owned(), html.clone());
+                        };
+                    }
 
-                let script = ExecuteScript::new(
-                    "Prism.highlightAllUnder(document.querySelector('article#markdown'));MathJax.typeset();",
-                );
-                let sse_event = script.write_as_axum_sse_event();
-                yielder.yield_item(Ok(sse_event)).await;
+                    let html: String = match rendered {
+                        Ok(v) => v,
+                        Err(err) => {
+                            format!("Something weird happened:{}", err)
+                        }
+                    };
+
+                    let patch = PatchElements::new(html)
+                        .selector("article#markdown")
+                        .mode(ElementPatchMode::Inner);
+                    let sse_event = patch.write_as_axum_sse_event();
+                    yielder.yield_item(Ok(sse_event)).await;
+
+                    let script = ExecuteScript::new(
+                        "Prism.highlightAllUnder(document.querySelector('article#markdown'));MathJax.typeset();",
+                    );
+                    let sse_event = script.write_as_axum_sse_event();
+                    yielder.yield_item(Ok(sse_event)).await;
+                }
             }
             let len = { state.lock().await.watched_files.len() };
             if len > 1 {
@@ -381,7 +397,7 @@ pub async fn event_handler(
                         // from inotify
                         // send html signals
                         let active = { local_state.lock().await.active_file.clone() };
-                        if active == updated_file {
+                        if active.as_ref() == Some(&updated_file) {
                             let patch = PatchElements::new(html)
                                 .selector("article#markdown")
                                 .mode(ElementPatchMode::Inner);
@@ -401,56 +417,45 @@ pub async fn event_handler(
                         yielder.yield_item(Ok(sse_event)).await;
                     }
                     SignalEvents::ActiveFileChanged => {
-                        // signal active file
-                        //
-                        let file = { local_state.lock().await.active_file.clone() };
-
-                        let buffer = {
-                            local_state
-                                .lock()
-                                .await
-                                .files
-                                .get(&file)
-                                .map(|b| b.to_owned())
-                        };
-                        let rendered = { local_state.lock().await.render(&file) };
-
-                        {
-                            let mut s = local_state.lock().await;
-                            if let Some((html, buf)) = rendered.as_ref().ok().zip(buffer) {
-                                s.reload_file(&file, buf.to_owned(), html.clone());
+                        // Render the newly active file, if any. With no active
+                        // file (server mode, empty) there is nothing to patch.
+                        if let Some(file) = { local_state.lock().await.active_file.clone() } {
+                            let buffer = {
+                                local_state
+                                    .lock()
+                                    .await
+                                    .files
+                                    .get(&file)
+                                    .map(|b| b.to_owned())
                             };
-                        }
+                            let rendered = { local_state.lock().await.render(&file) };
 
-                        // s.reload_file(file, buffer.unwrap(), rendered);
-
-                        let html: String = match rendered {
-                            Ok(v) => v,
-                            Err(err) => {
-                                format!("Something weird happened:{}", err)
+                            {
+                                let mut s = local_state.lock().await;
+                                if let Some((html, buf)) = rendered.as_ref().ok().zip(buffer) {
+                                    s.reload_file(&file, buf.to_owned(), html.clone());
+                                };
                             }
-                        };
 
-                        let patch = PatchElements::new(html)
-                            .selector("article#markdown")
-                            .mode(ElementPatchMode::Inner);
-                        let sse_event = patch.write_as_axum_sse_event();
-                        yielder.yield_item(Ok(sse_event)).await;
+                            let html: String = match rendered {
+                                Ok(v) => v,
+                                Err(err) => {
+                                    format!("Something weird happened:{}", err)
+                                }
+                            };
 
-                        let script = ExecuteScript::new(
-                            "Prism.highlightAllUnder(document.querySelector('article#markdown'));MathJax.typeset();",
-                        );
-                        let sse_event = script.write_as_axum_sse_event();
-                        yielder.yield_item(Ok(sse_event)).await;
+                            let patch = PatchElements::new(html)
+                                .selector("article#markdown")
+                                .mode(ElementPatchMode::Inner);
+                            let sse_event = patch.write_as_axum_sse_event();
+                            yielder.yield_item(Ok(sse_event)).await;
 
-                        let script = ExecuteScript::new(
-                            "Prism.highlightAllUnder(document.querySelector('article#markdown'));MathJax.typeset();",
-                        );
-                        let sse_event = script.write_as_axum_sse_event();
-                        yielder.yield_item(Ok(sse_event)).await;
-                        let patch = PatchSignals::new(r#"{"first": false}"#);
-                        let sse_event = patch.write_as_axum_sse_event();
-                        yielder.yield_item(Ok(sse_event)).await;
+                            let script = ExecuteScript::new(
+                                "Prism.highlightAllUnder(document.querySelector('article#markdown'));MathJax.typeset();",
+                            );
+                            let sse_event = script.write_as_axum_sse_event();
+                            yielder.yield_item(Ok(sse_event)).await;
+                        }
                     }
                 };
             }
@@ -477,7 +482,9 @@ pub async fn root(State(state): State<Arc<AppState>>) -> Html<String> {
             .unwrap_or_default()
     };
 
-    watch_file(file, state.clone()).await;
+    if let Some(file) = file {
+        watch_file(file, state.clone()).await;
+    }
 
     // Escape any </style> inside the user CSS so it cannot close the injected tag early.
     let theme_css = theme_css.replace("</style>", "<\\/style>");
@@ -494,7 +501,7 @@ pub enum SignalEvents {
 
 pub struct InnerState {
     files: BTreeMap<PathBuf, BytesMut>,
-    active_file: PathBuf,
+    active_file: Option<PathBuf>,
     event_sender: Sender<SignalEvents>,
     // event_reciever: Receiver<SignalEvents>,
     watched_files: Vec<PathBuf>,
@@ -520,7 +527,24 @@ impl InnerState {
         files.insert(first_file.clone(), buffer);
         InnerState {
             files,
-            active_file: first_file,
+            active_file: Some(first_file),
+            event_sender,
+            watched_files: vec![],
+            theme_css: None,
+            pending_markdown_files: vec![],
+            listen_port: None,
+            sse_clients: 0,
+            browser_open_allowed: true,
+        }
+    }
+
+    /// Construct an empty state with no active file, used by `--server-mode`
+    /// where the server starts before any file is opened.
+    pub fn empty() -> Self {
+        let (event_sender, _) = broadcast::channel(32);
+        InnerState {
+            files: BTreeMap::new(),
+            active_file: None,
             event_sender,
             watched_files: vec![],
             theme_css: None,
@@ -721,7 +745,7 @@ mod tests {
         let file_path = dummy_path("test.md");
         let state = InnerState::new(file_path.clone());
 
-        assert_eq!(state.active_file, file_path);
+        assert_eq!(state.active_file, Some(file_path.clone()));
         assert!(state.files.contains_key(&file_path));
         assert!(state.watched_files.is_empty());
     }
@@ -734,6 +758,34 @@ mod tests {
         let buffer = state.files.get(&file_path).unwrap();
         assert_eq!(buffer.capacity(), 4096);
         assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn test_inner_state_empty() {
+        let state = InnerState::empty();
+
+        assert_eq!(state.active_file, None);
+        assert!(state.files.is_empty());
+        assert!(state.watched_files.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_open_file_tracks_and_activates() {
+        let (_temp_dir, file_path) = create_temp_markdown_file("# Open me");
+        let state = Arc::new(Mutex::new(InnerState::empty()));
+
+        open_file(
+            State(state.clone()),
+            extract::Json(AddFileRequest {
+                file: file_path.clone(),
+            }),
+        )
+        .await;
+
+        let canonical = file_path.canonicalize().unwrap();
+        let guard = state.lock().await;
+        assert_eq!(guard.active_file, Some(canonical.clone()));
+        assert!(guard.files.contains_key(&canonical));
     }
 
     #[test]
@@ -1036,13 +1088,13 @@ $$
         let file_path1 = file_path.clone();
         let handle1 = tokio::spawn(async move {
             let guard = state1.lock().await;
-            assert_eq!(guard.active_file, file_path1);
+            assert_eq!(guard.active_file, Some(file_path1));
         });
 
         let file_path2 = file_path.clone();
         let handle2 = tokio::spawn(async move {
             let guard = state2.lock().await;
-            assert_eq!(guard.active_file, file_path2);
+            assert_eq!(guard.active_file, Some(file_path2));
         });
 
         handle1.await.unwrap();
@@ -1170,13 +1222,13 @@ Custom HTML content
         // Change active file
         {
             let mut guard = state.lock().await;
-            guard.active_file = file2.clone();
+            guard.active_file = Some(file2.clone());
         }
 
         // Verify active file changed
         {
             let guard = state.lock().await;
-            assert_eq!(guard.active_file, file2);
+            assert_eq!(guard.active_file, Some(file2));
         }
     }
 

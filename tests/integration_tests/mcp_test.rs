@@ -67,6 +67,46 @@ impl GlyphoServer {
             _runtime_dir: runtime_dir,
         }
     }
+
+    /// Start glypho in server mode (no initial file).
+    async fn start_server_mode() -> Self {
+        let work_dir = TempDir::new().unwrap();
+        let runtime_dir = TempDir::new().unwrap();
+
+        let child = Command::new(env!("CARGO_BIN_EXE_glypho"))
+            .arg("--server-mode")
+            .arg("--no-browser")
+            .arg("--port")
+            .arg("0")
+            .env("XDG_RUNTIME_DIR", runtime_dir.path())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("failed to spawn glypho");
+
+        let pidfile = runtime_dir.path().join("glypho").join("running.pid");
+        let deadline = Instant::now() + INITIALIZE_TIMEOUT;
+        let port = loop {
+            if let Ok(contents) = std::fs::read_to_string(&pidfile)
+                && let Some(port) = parse_port(&contents)
+                && server_is_alive(port).await
+            {
+                break port;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "glypho (server mode) did not write a pidfile with a live port in time"
+            );
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        };
+
+        Self {
+            child,
+            port,
+            _work_dir: work_dir,
+            _runtime_dir: runtime_dir,
+        }
+    }
 }
 
 impl Drop for GlyphoServer {
@@ -366,4 +406,60 @@ async fn mcp_open_reports_already_open_for_tracked_file() {
     let parsed: Value = serde_json::from_str(tool_text(&response)).unwrap();
     assert!(parsed["opened"].as_array().unwrap().is_empty());
     assert_eq!(parsed["already_open"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn server_mode_serves_open_form() {
+    let server = GlyphoServer::start_server_mode().await;
+
+    let response = reqwest::get(format!("http://localhost:{}/", server.port))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let body = response.text().await.unwrap();
+    assert!(
+        body.contains("Open a Markdown file"),
+        "server-mode page is missing the open-file form"
+    );
+}
+
+#[tokio::test]
+async fn server_mode_lists_null_then_open_activates() {
+    let server = GlyphoServer::start_server_mode().await;
+    let client = Client::new();
+    let mut session = McpSession::connect(&client, server.port).await;
+
+    // Empty state: no active file and no tracked files.
+    let response = session.call_tool("list_tracked_files", json!({})).await;
+    let parsed: Value = serde_json::from_str(tool_text(&response)).unwrap();
+    assert!(parsed["active_file"].is_null());
+    assert!(parsed["files"].as_array().unwrap().is_empty());
+
+    // Open a file via the HTTP endpoint.
+    let work = TempDir::new().unwrap();
+    let file = work.path().join("note.md");
+    std::fs::write(&file, "# Note").unwrap();
+
+    let response = client
+        .post(format!("http://localhost:{}/open", server.port))
+        .json(&json!({ "file": file.to_str().unwrap() }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+
+    // The opened file is now tracked and active.
+    let response = session.call_tool("list_tracked_files", json!({})).await;
+    let parsed: Value = serde_json::from_str(tool_text(&response)).unwrap();
+    let canonical = std::fs::canonicalize(&file).unwrap();
+    assert_eq!(
+        parsed["active_file"].as_str().unwrap(),
+        canonical.to_string_lossy()
+    );
+    assert!(
+        parsed["files"]
+            .as_array()
+            .unwrap()
+            .contains(&json!(canonical.to_string_lossy()))
+    );
 }
